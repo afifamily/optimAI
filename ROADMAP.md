@@ -21,13 +21,14 @@ intégrés à Claude Desktop et CLI, validés sur le cas XCTest TBS.
 
 ### Étapes
 
-1. ✅ **Architecture validée** — Décisions DEC-001 → DEC-010
-2. 🔄 **Bootstrap technique** (CLI_PROMPT_001)
-   - `git init`, repo GitHub privé
-   - Structure dossiers
-   - `pyproject.toml` via `uv`
-   - `.gitignore`, `.env.example`
-3. 📝 **Setup environnement local**
+1. ✅ **Architecture validée** — Décisions DEC-001 → DEC-010 + DEC-011
+2. ✅ **Bootstrap technique** (CLI_PROMPT_001, session CLI #1)
+   - `git init`, commit `9deed6e`, remote `origin` configuré (push à venir)
+   - Structure dossiers créée
+   - `pyproject.toml` via `uv` (fastmcp 3.3.1, httpx 0.28.1, pydantic 2.13.4)
+   - `.python-version` épinglé sur 3.12 (DEC-011)
+   - `.gitignore`, `.env.example`, `config/blacklist.txt` initial
+3. 🔄 **Setup environnement local** (prochaine session, CLI_PROMPT_002)
    - Install Osaurus sur Mac Studio
    - Pull `mlx-community/Qwen3-Coder-Next-8bit`
    - Vérification santé serveur Osaurus

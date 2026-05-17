@@ -28,7 +28,7 @@ aujourd'hui à la main en mode `/optimized`.
 
 | Priorité | Fichier | Contenu |
 |----------|---------|---------|
-| 🔴 | `DECISIONS.md` | Index des décisions (10 décisions DEC-001 → DEC-010 actuellement) |
+| 🔴 | `DECISIONS.md` | Index des décisions (11 décisions DEC-001 → DEC-011 actuellement) |
 | 🔴 | `ROADMAP.md` | Phases 1 → 4, statut courant |
 | 🟡 | `decisions/DEC-*` | Détails individuels par décision |
 | 🟡 | `docs/` | Architecture, patterns, troubleshooting (à venir Phase 1) |
@@ -145,7 +145,7 @@ Détails dans les DEC :
 
 | Composant | Technologie | Justification |
 |-----------|-------------|---------------|
-| Langage | Python 3.12+ | Écosystème MCP + Osaurus client + asyncio |
+| Langage | Python 3.12 (épinglé via `.python-version`, DEC-011) | Écosystème MCP + Osaurus client + asyncio, maturité 31 mois |
 | Project manager | `uv` | Recommandé par le SDK MCP officiel, rapide |
 | Serveur MCP | `fastmcp` | Standard de facto, ~70% des serveurs MCP |
 | Client Osaurus | `httpx` async | OpenAI-compatible, retry/timeout natifs |
@@ -156,25 +156,47 @@ Détails dans les DEC :
 
 ## Build & Run Commands
 
-> **Note** : commandes définitives à compléter après bootstrap CLI
-> (CLI_PROMPT_001). Cette section sera enrichie par la session CLI #1.
+Commandes validées lors de la session CLI #1 (2026-05-17). Le serveur MCP
+lui-même n'est pas encore implémenté (placeholders Python) — il sera
+livré dans la session CLI #2+.
 
-### Environnement de dev (placeholder)
+### Environnement de dev
 
 ```bash
 cd "/Users/hassanafif/.../production/optimAI"
-uv sync                          # Install deps
-uv run pytest                    # Run tests
-uv run python -m optimai.server  # Run MCP server (stdio)
+
+uv sync                              # Install/sync deps, Python 3.12.x via uv
+uv run pytest                        # Run tests (no tests ran à ce stade)
+uv run ruff check .                  # Lint (placeholders compatibles)
+uv run python -m optimai.server      # Run MCP server stdio (placeholder, lève NotImplementedError)
 ```
 
-### Osaurus (à installer en Phase 1 step 3)
+Deps résolues (lockées dans `uv.lock`, versionné) :
+
+| Dep | Résolu |
+|-----|--------|
+| fastmcp | 3.3.1 |
+| httpx | 0.28.1 |
+| pydantic | 2.13.4 |
+| pytest (dev) | 9.0.3 |
+| pytest-asyncio (dev) | 1.3.0 |
+| ruff (dev) | 0.15.13 |
+
+### Python toolchain
+
+- **Version** : 3.12 (épinglée dans `.python-version`, DEC-011)
+- **Gestion** : `uv` télécharge et gère Python lui-même, sous
+  `~/.local/share/uv/python/`
+- **venv** : `.venv/` créée automatiquement par `uv` à la racine, pas
+  besoin de l'activer manuellement (utiliser `uv run` pour tout)
+
+### Osaurus (à installer Phase 1 étape 3, voir CLI_PROMPT_002 à venir)
 
 ```bash
-# Installation via Homebrew (à confirmer après web search)
+# Installation — méthode à confirmer (Homebrew ou DMG GitHub releases)
 # Pull modèle :
 osaurus pull mlx-community/Qwen3-Coder-Next-8bit
-osaurus serve                    # http://127.0.0.1:8080
+osaurus serve                       # http://127.0.0.1:8080
 ```
 
 ## Sécurité — Checklist
@@ -234,4 +256,6 @@ Adaptés de TBS et Bassmati :
 
 | Session | Date | Machine | Focus |
 |---------|------|---------|-------|
-| Desktop #1 | 2026-05-17 | (à compléter) | Initiation, DEC-001 → DEC-010, structure documentaire, brief CLI #1 |
+| Desktop #1 | 2026-05-17 | Mac Studio | Initiation, DEC-001 → DEC-010, structure documentaire, brief CLI #1 |
+| CLI #1 | 2026-05-17 | Mac Studio | Bootstrap technique : structure projet, `pyproject.toml`, `.gitignore`, Git init + commit `9deed6e`, remote `origin` |
+| Desktop #2 | 2026-05-17 | Mac Studio | DEC-011 (Python 3.12), mises à jour DECISIONS/CLAUDE/ROADMAP post-CLI #1 |

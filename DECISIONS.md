@@ -26,6 +26,7 @@ Pour ajouter une nouvelle décision, voir `decisions/README.md`.
 | [DEC-008](decisions/DEC-008-security-guardrails.md) | Garde-fous sécurité — blacklist, sandbox path, secrets isolés | ✅ | 2026-05-17 |
 | [DEC-009](decisions/DEC-009-meta-architecture-desktop-cli.md) | Méta-architecture — Desktop = Cortex, CLI = Hands intelligente | ✅ | 2026-05-17 |
 | [DEC-010](decisions/DEC-010-git-private-repo.md) | Git activé, repo privé GitHub | ✅ | 2026-05-17 |
+| [DEC-011](decisions/DEC-011-python-3-12-baseline.md) | Python 3.12 baseline (`.python-version` épinglée) | ✅ | 2026-05-17 |
 
 ## Décisions à venir
 
@@ -49,3 +50,21 @@ _Aucune décision en cours de rédaction._
 - Adoption du pattern documentaire Bassmati : index + fichiers individuels.
 - Cohérence transverse avec TBS/Bassmati/QNAP confirmée (DEC-013 Bassmati
   étendue par DEC-009 ici).
+
+### Session CLI #1 (2026-05-17)
+
+- Bootstrap technique exécuté selon `CLI_PROMPT_001` :
+  structure de dossiers, `pyproject.toml`, `.gitignore`, `.env.example`,
+  `config/blacklist.txt`, placeholders Python, tests squelette.
+- Deps résolues : fastmcp 3.3.1, httpx 0.28.1, pydantic 2.13.4 (+ dev:
+  pytest 9.0.3, pytest-asyncio 1.3.0, ruff 0.15.13).
+- Décision prise pendant la session : Python 3.12 épinglé via
+  `.python-version` plutôt que laisser uv résoudre vers 3.14.5
+  (captée a posteriori en **DEC-011**).
+- Sanity checks passés : `uv sync`, `uv run pytest` (no tests ran),
+  `uv run ruff check .`.
+- Git initialisé, commit `9deed6e`, remote `origin` configuré. Premier
+  `git push -u origin main` réservé à Hassan (DEC-009).
+- Écarts mineurs assumés vs brief : `pyproject.toml` écrit directement
+  (dossier non-vide à cause des `.md` Desktop), `.gitkeep` ajouté dans
+  `scripts/` et `docs/`, `uv.lock` versionné.
