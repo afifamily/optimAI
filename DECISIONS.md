@@ -27,6 +27,7 @@ Pour ajouter une nouvelle décision, voir `decisions/README.md`.
 | [DEC-009](decisions/DEC-009-meta-architecture-desktop-cli.md) | Méta-architecture — Desktop = Cortex, CLI = Hands intelligente | ✅ | 2026-05-17 |
 | [DEC-010](decisions/DEC-010-git-private-repo.md) | Git activé, repo privé GitHub | ✅ | 2026-05-17 |
 | [DEC-011](decisions/DEC-011-python-3-12-baseline.md) | Python 3.12 baseline (`.python-version` épinglée) | ✅ | 2026-05-17 |
+| [DEC-012](decisions/DEC-012-osaurus-port-1337.md) | Port Osaurus 1337, écoute 127.0.0.1, `--expose` interdit | ✅ | 2026-05-17 |
 
 ## Décisions à venir
 
