@@ -1,0 +1,29 @@
+# Blacklisted shell commands (regex patterns).
+# DEC-008 — Security guardrails.
+# Format: one regex per line. Lines starting with # are comments.
+
+# Destructive deletion
+^\s*rm\s+(-[rRf]+\s+)*/\s*$
+^\s*rm\s+-rf\s+(?!\$\{?WORKDIR\}?|\./|\$HOME)/
+\bdd\s+.*of=/dev/
+
+# Privilege escalation (DEC-008, sudo refused in Phase 1)
+^\s*sudo\b
+^\s*su\s+-
+
+# Git remote write (Hassan gère Git lui-même, DEC-013 Bassmati + DEC-010)
+^\s*git\s+push\b
+^\s*git\s+push\s+--force\b
+
+# Piped remote execution
+\bcurl\s+[^|]*\|\s*(sh|bash|zsh)
+\bwget\s+[^|]*\|\s*(sh|bash|zsh)
+\bbash\s+<\(
+
+# Overly permissive chmod
+^\s*chmod\s+-?R?\s*777\b
+
+# Hardcoded secrets detection (basic — Phase 1)
+\bghp_[A-Za-z0-9]{36,}
+\bsk-[A-Za-z0-9]{32,}
+\bxoxb-\d+-\d+-

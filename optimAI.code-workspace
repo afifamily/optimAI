@@ -1,0 +1,13 @@
+{
+  "folders": [
+    { "path": "." }
+  ],
+  "settings": {
+    "python.analysis.extraPaths": ["src"],
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/.pytest_cache": true,
+      "**/.ruff_cache": true
+    }
+  }
+}

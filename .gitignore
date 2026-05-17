@@ -1,0 +1,54 @@
+# macOS
+.DS_Store
+*.swp
+
+# iCloud
+.iCloudDrive
+.iCloud~*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv
+.uv/
+
+# Testing & linting
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets & local config
+.env
+.env.local
+.env.*.local
+
+# Drafts & briefs (cf. Bassmati)
+.drafts/
+
+# Logs & local output
+*.log
+logs/
+output/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+!optimAI.code-workspace
+
+# OS / temp
+tmp/
+*.tmp
