@@ -10,6 +10,7 @@ dependencies = [
     "fastmcp>=3.0",
     "httpx>=0.27",
     "pydantic>=2.7",
+    "pydantic-settings>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -36,3 +37,6 @@ target-version = "py312"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# src-layout: import optimai from src/ directly. Robust against the flaky
+# editable install on the iCloud-synced project path (see CLI #3 report).
+pythonpath = ["src"]

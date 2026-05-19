@@ -1,0 +1,7 @@
+$ swift test
+error: no such module 'XCTest'
+
+# Project context:
+# - TelegramBotsServer (Swift 5.9, Vapor 4)
+# - macOS workstation, Xcode 15 installed in /Applications/Xcode.app
+# - `swift build` succeeds; only `swift test` fails
