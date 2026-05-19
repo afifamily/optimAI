@@ -1,8 +1,11 @@
 # DEC-019 : Cleanup Osaurus de la machine
 
 **Date** : 2026-05-19
-**Statut** : 📝 Proposed (à exécuter après validation finale de la
-chaîne mlx_lm.server en CLI #3)
+**Statut** : ✅ Accepted (acceptée Desktop session #6, 2026-05-19)
+**Déclencheur** : CLI session #2 PATCH #3 validé bout-en-bout, commit
+local `05d8bae` (tous critères ✅ : `/v1/models` OK, `prompt_tokens=39`,
+KV cache fonctionnel, Fibonacci memoization valide, `.env.example`
++ `.env` + `config/blacklist.txt` finalisés)
 **Cause** : [DEC-017](DEC-017-mlx-lm-server-replaces-osaurus.md)
 
 ## Contexte
@@ -24,7 +27,7 @@ DEC-019 trace la procédure de cleanup propre.
 ## Décision
 
 **Exécuter le cleanup uniquement après validation finale de la chaîne
-mlx_lm.server** (CLI session #3, PATCH #3 du brief, étapes finales
+mlx_lm.server** (CLI session #2, PATCH #3 du brief, étapes finales
 validées + commit fait).
 
 Le but est de ne pas démolir le filet de sécurité avant d'avoir prouvé
@@ -33,17 +36,17 @@ que la nouvelle stack tient sur au moins 2-3 sessions consécutives.
 ## Procédure de cleanup
 
 À exécuter **par Hassan uniquement** (opération privilégiée, DEC-009).
-CLI peut **présenter** chaque commande mais ne l'exécute pas.
+Desktop peut **présenter** chaque commande mais ne l'exécute pas, et
+demande validation explicite Hassan avant chaque `rm -rf` (irréversible).
 
 ### Étape 1 — Vérifier que la nouvelle chaîne marche
 
 Préconditions :
 - `mlx_lm.server` lancé en local et a servi au moins 3 requêtes
   cohérentes
-- `.env` du projet pointe sur `OSAURUS_URL=http://127.0.0.1:1337/v1`
-  (le nom de variable reste `OSAURUS_URL` ou est renommé en
-  `MLX_LM_SERVER_URL` selon la décision finale du PATCH #3 ; ce qui
-  compte c'est que ça pointe sur le bon serveur)
+- `.env` du projet pointe sur `MLX_SERVER_URL=http://127.0.0.1:1337/v1`
+  (DEC-017, renommé depuis `OSAURUS_URL` dans le PATCH #3 du brief
+  CLI_PROMPT_002)
 - Aucune référence à `osaurus` dans le code Python du projet
 
 ### Étape 2 — Arrêter Osaurus définitivement
@@ -129,12 +132,12 @@ historique. Coût : 3 lignes regex jamais matchées. Bénéfice : si une
 future session Claude tente d'invoquer `osaurus serve`, blacklist
 bloque. Trace historique préservée.
 
-À renforcer dans la blacklist (PATCH #3 du brief) :
-
-```
-# Forbid mlx_lm.server LAN exposure (DEC-012, DEC-017)
-\bmlx_lm\.server\s+.*--host\s+(0\.0\.0\.0|::)
-```
+**Statut au moment de l'acceptation (Desktop #6)** : règles
+anti-Osaurus déjà présentes en défense en profondeur dans
+`config/blacklist.txt` (cf. commentaires "legacy DEC-012 / DEC-014,
+kept as defense in depth even after DEC-017 bascule"). Règle
+`mlx_lm.server --host 0.0.0.0` également déjà ajoutée. **Étape 7
+déjà acquise via le commit `05d8bae` de CLI #2 PATCH #3.**
 
 ## Bénéfices attendus
 
@@ -154,10 +157,13 @@ bloque. Trace historique préservée.
 
 ## Note méthodologique
 
-DEC-019 est consciemment laissée 📝 Proposed (pas ✅ Accepted)
-tant que la nouvelle chaîne n'a pas prouvé sa stabilité. C'est un
+DEC-019 a été consciemment laissée 📝 Proposed (pas ✅ Accepted)
+tant que la nouvelle chaîne n'avait pas prouvé sa stabilité. C'est un
 principe optimAI : on ne supprime pas le filet de sécurité avant
 d'avoir validé le remplacement.
 
-Quand CLI #3 PATCH #3 sera validé et committé, Desktop session #6
-passera DEC-019 à ✅ Accepted et Hassan exécutera la procédure.
+Acceptation effective Desktop session #6 (2026-05-19), après que
+CLI session #2 PATCH #3 a validé bout-en-bout la chaîne
+`mlx_lm.server` (commit local `05d8bae`). La procédure ci-dessus est
+exécutée par Hassan, étape par étape, avec validation explicite avant
+chaque `rm -rf`.

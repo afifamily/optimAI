@@ -7,7 +7,7 @@ chose d'utilisable avant la suivante.
 
 | Phase | Objectif | Statut |
 |-------|----------|--------|
-| **Phase 1** | Bootstrap + PoC Patterns A & D | 🚧 En cours |
+| **Phase 1** | Bootstrap + PoC Patterns A & D | 🚧 En cours (étape 4) |
 | **Phase 2** | Patterns B (Patch) & C (Create) | 📝 Planifiée |
 | **Phase 3** | Enrichissement collaboratif via TBS/Bassmati/QNAP | 📝 Planifiée |
 | **Phase 4** | Robustesse & observabilité | 📝 Planifiée |
@@ -21,45 +21,54 @@ intégrés à Claude Desktop et CLI, validés sur le cas XCTest TBS.
 
 ### Étapes
 
-1. ✅ **Architecture validée** — Décisions DEC-001 → DEC-010 + DEC-011
-2. ✅ **Bootstrap technique** (CLI_PROMPT_001, session CLI #1)
-   - `git init`, commit `9deed6e`, remote `origin` configuré (push à venir)
-   - Structure dossiers créée
-   - `pyproject.toml` via `uv` (fastmcp 3.3.1, httpx 0.28.1, pydantic 2.13.4)
-   - `.python-version` épinglé sur 3.12 (DEC-011)
-   - `.gitignore`, `.env.example`, `config/blacklist.txt` initial
-3. 🔄 **Setup environnement local** (prochaine session, CLI_PROMPT_002)
-   - Install Osaurus sur Mac Studio
-   - Pull `mlx-community/Qwen3-Coder-Next-8bit`
-   - Vérification santé serveur Osaurus
-4. 📝 **Module `shell.py`** — exécution sandboxée
-   - Blacklist commandes
-   - Sandbox chemin (workdir)
-   - Timeouts, troncature output
-   - Tests unitaires
-5. 📝 **Module `worker.py`** — client Osaurus
-   - Tool-calling OpenAI-style
-   - Session reuse (KV cache via `session_id`)
-   - Test isolé (ex : "liste les fichiers de /tmp")
-6. 📝 **Schemas Pydantic**
+1. ✅ **Architecture validée** — DEC-001 → DEC-011 (Desktop #1, Desktop #2)
+2. ✅ **Bootstrap technique** (CLI_PROMPT_001, session CLI #1, commit `9deed6e`)
+   - Structure dossiers, `pyproject.toml`, `.gitignore`, `.env.example`,
+     `config/blacklist.txt` initial
+   - `uv sync` + Python 3.12.13 épinglé (DEC-011)
+   - Git initialisé, remote `origin` configuré
+3. ✅ **Setup environnement local — chaîne d'inférence validée**
+   (CLI_PROMPT_002 PATCH #3, sessions CLI #2 + Desktop #5/#6, commit
+   local `05d8bae` + cleanup DEC-019)
+   - Stack pivotée Osaurus → `mlx_lm.server` après diagnostic
+     discriminant (DEC-016/017)
+   - Modèle worker confirmé : `mlx-community/Qwen2.5-Coder-32B-Instruct-4bit`
+     (~18 GB, DEC-018)
+   - Tests live : `prompt_tokens=39` (template appliqué), réponses
+     cohérentes (4 + Paris), KV cache fonctionnel, Fibonacci
+     memoization en multi-tour
+   - `.env.example` + `.env` finalisés (variables `MLX_SERVER_URL`,
+     `OPTIMAI_MODEL` HF-id complet)
+   - `config/blacklist.txt` consolidé (anti-`mlx_lm.server --host 0.0.0.0`
+     + anti-`osaurus serve` en défense en profondeur)
+   - Cleanup Osaurus exécuté (DEC-019 ✅ Accepted, ~19 GB récupérés)
+4. 🔄 **Module `shell.py` + Module `worker.py` + premier test Pattern A**
+   (CLI_PROMPT_003, session CLI #3 à venir)
+   - `shell.py` : exécution sandboxée (blacklist, sandbox chemin,
+     timeouts, troncature 10 KB), tests unitaires exhaustifs
+   - `worker.py` : client HTTP OpenAI-compat vers `mlx_lm.server`,
+     boucle d'itérations bornée (DEC-007), KV cache transparent
+   - Premier test Pattern A bout-en-bout sur fixture XCTest (cas TBS)
+5. 📝 **Schemas Pydantic**
    - `DiagnoseSpec`, `DiagnoseReport`
    - `ExecuteSpec`, `ExecuteReport`
-7. 📝 **Pattern A — Diagnose**
-   - Implémentation complète
-   - Test sur fixture XCTest (cas TBS troubleshooting #N)
-8. 📝 **Pattern D — Execute**
-   - Implémentation complète
-   - Test sur pack de commandes shell typique
-9. 📝 **Serveur MCP**
+6. 📝 **Pattern A — Diagnose** (complétion)
+   - Module `patterns/diagnose.py` implémentation complète
+   - Système prompt worker (en anglais), boucle d'investigation
+   - Tests sur fixtures TBS troubleshooting
+7. 📝 **Pattern D — Execute**
+   - Module `patterns/execute.py`
+   - Test sur pack de commandes shell typique (build, test, validation)
+8. 📝 **Serveur MCP**
    - Exposition `optimai_diagnose` et `optimai_execute`
-   - Transport stdio via FastMCP
-10. 📝 **Intégration Claude Desktop**
-    - Entrée dans `claude_desktop_config.json`
-    - Test bout-en-bout
-11. 📝 **Intégration Claude CLI**
+   - Transport stdio via FastMCP (DEC-005)
+9. 📝 **Intégration Claude Desktop**
+   - Entrée dans `claude_desktop_config.json`
+   - Test bout-en-bout
+10. 📝 **Intégration Claude CLI**
     - Entrée dans `.mcp.json` des projets TBS / Bassmati / QNAP
     - Test bout-en-bout depuis chaque projet
-12. 📝 **Documentation**
+11. 📝 **Documentation**
     - `docs/ARCHITECTURE.md` (diagramme + flux)
     - `docs/PATTERNS.md` (spec Patterns A & D, exemples)
     - `TROUBLESHOOTING.md` initial
@@ -117,6 +126,13 @@ passées des autres projets.
 - Sandboxing Docker optionnel (durcissement DEC-008)
 - Whitelist `sudo` configurable par projet
 - Dashboard simple (optionnel — uniquement si utile)
+- **Autostart `mlx_lm.server` via launchd LaunchAgent** (cf. note
+  DEC-017, Phase 1 reste en lancement manuel)
+- **Benchmark contrôlé Qwen2.5 vs Qwen3-Coder** sur cas réels
+  TBS/Bassmati/QNAP (cf. note DEC-018 — réévaluation rationnelle sur
+  données après que la chaîne ait prouvé sa stabilité)
+- **Désactiver macOS Low Power Mode** avant les benchmarks (détecté
+  pendant les sessions de debug Osaurus, à ne pas oublier)
 
 ---
 
@@ -126,3 +142,6 @@ passées des autres projets.
 - Déploiement sur QNAP (Mac Studio doit rester la machine d'inférence)
 - Modèles cloud comme fallback automatique (sauf si Phase 3 le justifie)
 - Worker en GPU non-Apple (le projet est explicitement Apple Silicon)
+- Re-test d'Osaurus (DEC-019 ferme la porte ; ré-ouverture possible
+  uniquement après une v1.0 stable d'Osaurus, et seulement si une
+  raison technique sérieuse le motive)

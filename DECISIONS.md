@@ -34,7 +34,7 @@ Pour ajouter une nouvelle décision, voir `decisions/README.md`.
 | [DEC-016](decisions/DEC-016-osaurus-diagnostic-corrected.md) | Diagnostic Osaurus corrigé — serveur fautif, pas les modèles | ✅ | 2026-05-19 |
 | [DEC-017](decisions/DEC-017-mlx-lm-server-replaces-osaurus.md) | Bascule Osaurus → `mlx_lm.server` comme serveur d'inférence | ✅ | 2026-05-19 |
 | [DEC-018](decisions/DEC-018-qwen2-5-coder-32b-confirmed.md) | Qwen2.5-Coder-32B-Instruct-4bit confirmé comme worker (Phase 1) | ✅ | 2026-05-19 |
-| [DEC-019](decisions/DEC-019-osaurus-cleanup.md) | Cleanup Osaurus de la machine | 📝 | 2026-05-19 |
+| [DEC-019](decisions/DEC-019-osaurus-cleanup.md) | Cleanup Osaurus de la machine | ✅ | 2026-05-19 |
 
 ## Décisions à venir
 
@@ -58,8 +58,8 @@ appliqué), réponses cohérentes, KV cache fonctionnel.
 - DEC-017 : `mlx_lm.server` remplace Osaurus (supersède DEC-003)
 - DEC-018 : Qwen2.5-Coder-32B-Instruct-4bit confirmé sur preuves
   (supersède DEC-015 dont les prémisses étaient fausses)
-- DEC-019 : cleanup Osaurus de la machine (📝 Proposed, à exécuter
-  après validation finale)
+- DEC-019 : cleanup Osaurus de la machine (✅ Accepted Desktop session
+  #6, post CLI #2 PATCH #3 validé, commit local `05d8bae`)
 
 ## Notes de session
 
@@ -97,3 +97,100 @@ appliqué), réponses cohérentes, KV cache fonctionnel.
 - Écarts mineurs assumés vs brief : `pyproject.toml` écrit directement
   (dossier non-vide à cause des `.md` Desktop), `.gitkeep` ajouté dans
   `scripts/` et `docs/`, `uv.lock` versionné.
+
+### Session CLI #2 (2026-05-18 / 2026-05-19)
+
+Session longue, en deux temps, séparée par Desktop #5.
+
+**Première partie (2026-05-18 → 2026-05-19 matin) — diagnostic Osaurus**
+
+- Install Osaurus v0.18.28 (par Hassan), pull successif de
+  Qwen3-Coder-30B-A3B-Instruct-4bit (Plan B), puis
+  Qwen2.5-Coder-32B-Instruct-4bit (Plan C), tous deux échouent en
+  inférence avec sortie dégénérée "2+2+2+..." sur prompt simple.
+- Hypothèse DEC-014 (template Jinja complexe non appliqué) acceptée
+  initialement. Plan C (DEC-015) tenté sur cette base : Qwen2.5-Coder
+  a un template embarqué simple, devrait fonctionner. Échec identique.
+- **Test discriminant proposé par CLI** : ajouter un troisième modèle
+  (Qwen2.5-3B-Instruct-4bit, template simple, taille 10× plus petite)
+  pour discriminer "template" vs "taille" vs "serveur". Résultat :
+  les 3 modèles donnent `prompt_tokens=25` figé, indépendamment de
+  tout. **Conclusion : c'est Osaurus qui n'applique pas les templates**,
+  pas une caractéristique des modèles.
+- Validation finale par test croisé : `mlx_lm.server` (Apple ML
+  Explore) lancé sur le même fichier modèle Qwen2.5-Coder-32B →
+  `prompt_tokens=39`, contenu cohérent. La preuve est dans le
+  serveur, pas dans le modèle.
+- Session mise en pause en attendant que Desktop #5 capture les
+  décisions.
+
+**Deuxième partie (2026-05-19) — PATCH #3 du brief, validation finale**
+
+- Reprise après acceptation Desktop #5 des DEC-016/017/018/019 et
+  émission du PATCH #3 dans le brief CLI_PROMPT_002.
+- 3 tests live sur `mlx_lm.server` + Qwen2.5-Coder-32B-Instruct-4bit :
+  - `/v1/models` → modèle exposé
+  - `/v1/chat/completions` simple → `prompt_tokens=39`, "2+2 equals
+    4, and the capital of France is Paris.", `finish_reason: "stop"`
+  - Fibonacci memoization < 10 lignes → code Python idiomatique,
+    `cached_tokens: 5` (KV cache fonctionnel)
+- `.env.example` réécrit (variables renommées `OSAURUS_URL` →
+  `MLX_SERVER_URL`, `OPTIMAI_MODEL` avec id HF complet), `.env` local
+  créé, `config/blacklist.txt` consolidé (anti-`mlx_lm.server --host
+  0.0.0.0` ajouté, règles anti-Osaurus conservées en défense en
+  profondeur).
+- Sanity checks tous passés : `uv run python -c "import optimai"`,
+  `uv run ruff check .`, `uv run pytest`, `git check-ignore -v .env`.
+- Commit local `05d8bae` (push réservé à Hassan, DEC-009). Étapes 1-8
+  du PATCH #3 toutes ✅, étapes 11-12 confiées à Desktop #6.
+- Leçon principale (cf. règle ajoutée à CLAUDE.md) : un diagnostic
+  basé sur une hypothèse plausible mais non testée par discrimination
+  peut coûter ~24h. Toujours prévoir le test discriminant **dans la
+  DEC elle-même**.
+
+### Session Desktop #5 (2026-05-19)
+
+- Bascule documentaire post-test-discriminant CLI #2 : DEC-016
+  (diagnostic corrigé, supersède DEC-014), DEC-017 (`mlx_lm.server`
+  remplace Osaurus, supersède DEC-003), DEC-018 (Qwen2.5-Coder-32B
+  confirmé sur preuves, supersède DEC-015), DEC-019 (cleanup Osaurus,
+  📝 Proposed).
+- Encadrés "Statut final — Superseded" ajoutés en tête de DEC-003,
+  DEC-014, DEC-015.
+- Émission du PATCH #3 dans `.drafts/claude/CLI/CLI_PROMPT_002_osaurus_setup.md`.
+- Rédaction du `HANDOVER_session_2026-05-19.md` pour assurer la reprise
+  (chronologie complète, état machine snapshot, ce-que-faire / ce-que-
+  ne-pas-faire pour la session suivante).
+- Commit Desktop #5 fait par Hassan (`git push` à sa charge, DEC-009).
+
+### Session Desktop #6 (2026-05-19)
+
+- DEC-019 passée à ✅ Accepted (déclencheur : commit local CLI #2
+  `05d8bae`, tous critères ✅, chaîne mlx_lm.server prouvée stable).
+- Cleanup Osaurus exécuté étape par étape avec validation explicite
+  Hassan avant chaque `rm -rf` (DEC-009) :
+  - Vérification préalable que la nouvelle chaîne tient (test 2+2,
+    `prompt_tokens=34`)
+  - `brew uninstall --cask osaurus` (réversible, OK)
+  - `rm -rf ~/.osaurus/` (~6 MB, OK)
+  - `rm -rf ~/MLXModels/` (**~19 GB libérés**, après vérification
+    `lsof -p <mlx_lm.server>` confirmant aucune dépendance vivante)
+  - Caches macOS, plists, HTTPStorages, DiagnosticReport `.ips`,
+    Crash plist, DMG Downloads, caches Homebrew résiduels
+  - Vérification fonctionnelle finale : `mlx_lm.server` HTTP 200,
+    `/v1/models` ne liste plus que l'entrée HF officielle (l'entrée
+    locale `~/MLXModels/...` a disparu immédiatement)
+- Correction docstring `src/optimai/worker.py` pour aligner sur DEC-017
+  (référence remplacée DEC-003 → DEC-017/018, mention `mlx_lm.server`).
+- Mise à jour `CLAUDE.md` : stack mlx_lm.server, `uv sync --extra dev`,
+  variables d'env renommées, règles de sécurité actualisées, historique
+  sessions complété jusqu'à Desktop #6.
+- Mise à jour `ROADMAP.md` : Phase 1 étape 3 ✅ (chaîne d'inférence
+  validée + cleanup), étape 4 reformulée pour CLI #3 (shell.py +
+  worker.py + premier test Pattern A), Phase 4 enrichie (launchd
+  autostart, benchmark Qwen2.5 vs Qwen3-Coder, Low Power Mode).
+- Note de session CLI #2 + Desktop #5 + Desktop #6 ajoutées dans
+  `DECISIONS.md` (cette section).
+- Rédaction `CLI_PROMPT_003_shell_worker_pattern_a.md` (brief pour
+  CLI #3 : implémentation `shell.py` + `worker.py` + premier test
+  bout-en-bout du Pattern A sur cas XCTest TBS).

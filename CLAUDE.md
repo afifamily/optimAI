@@ -1,8 +1,8 @@
 # CLAUDE.md — optimAI Project Context
 
-> **Mode** : Phase 1 — Bootstrap + PoC
-> **Dernière mise à jour** : 2026-05-17 (Session Desktop #1 — Initiation,
-> capture des 10 premières décisions, structure documentaire)
+> **Mode** : Phase 1 — Bootstrap + PoC, chaîne d'inférence validée
+> **Dernière mise à jour** : 2026-05-19 (Session Desktop #6 — post CLI #2
+> PATCH #3 validé, DEC-019 cleanup Osaurus exécuté)
 
 ## Présentation
 
@@ -12,7 +12,17 @@ sur les tâches mécaniques (lectures de logs, packs de commandes shell,
 diagnostics itératifs) et pour automatiser ce que Hassan exécute
 aujourd'hui à la main en mode `/optimized`.
 
-**Stack** : Python 3.12 + FastMCP + Osaurus (MLX) + Qwen3-Coder-Next 8-bit.
+**Stack actuelle (DEC-017 + DEC-018)** :
+
+- **Cortex** : Claude Desktop / CLI / API
+- **Dispatcher** : Python 3.12 + FastMCP (à implémenter — sessions CLI #3+)
+- **Hands** : `mlx_lm.server` (Apple ML Explore officiel) +
+  `mlx-community/Qwen2.5-Coder-32B-Instruct-4bit` (~18 GB)
+- **Communication** : MCP stdio (Cortex ↔ Dispatcher), HTTP OpenAI-compat
+  (Dispatcher ↔ Hands)
+
+Bascule depuis Osaurus le 2026-05-19 — voir DEC-016/017/018/019 et la
+section "Évolution majeure 2026-05-19" de `DECISIONS.md`.
 
 ## Propriétaire
 
@@ -28,10 +38,14 @@ aujourd'hui à la main en mode `/optimized`.
 
 | Priorité | Fichier | Contenu |
 |----------|---------|---------|
-| 🔴 | `DECISIONS.md` | Index des décisions (11 décisions DEC-001 → DEC-011 actuellement) |
+| 🔴 | `DECISIONS.md` | Index des 19 décisions (DEC-001 → DEC-019, dont 6 superseded) |
 | 🔴 | `ROADMAP.md` | Phases 1 → 4, statut courant |
 | 🟡 | `decisions/DEC-*` | Détails individuels par décision |
 | 🟡 | `docs/` | Architecture, patterns, troubleshooting (à venir Phase 1) |
+
+Si tu reprends en sortant d'un long gap : lis aussi
+`.drafts/claude/CLI/HANDOVER_session_2026-05-19.md` qui résume la bascule
+mlx_lm.server.
 
 ### Commandes : toujours vérifiées
 
@@ -59,19 +73,18 @@ Base path : `/Users/hassanafif/Library/Mobile Documents/com~apple~CloudDocs/Deve
 
 - **URL** : https://github.com/afifamily/optimAI (privé, créé 2026-05-17)
 - **Branche** : `main`
-- **Premier push** : prévu après validation du commit bootstrap par Hassan
+- **Push** : opération privilégiée Hassan (DEC-009, DEC-010). CLI commit
+  local uniquement.
 
 ## Méthodologie de travail avec Claude (DEC-009)
 
 ### Répartition Desktop / CLI / Hassan
 
-DEC-009 étend DEC-013 Bassmati pour optimAI :
-
 | Acteur | Rôle | Périmètre |
 |--------|------|-----------|
-| **Claude Desktop** | Cortex / chef d'orchestre | Architecture, décisions, planification, documentation, briefs CLI. Écritures MCP limitées aux fichiers courts (< 200 lignes). |
-| **Claude CLI** | Hands intelligente | Bootstrap technique, implémentation Python, tests, debugging itératif. Garde sa faculté de penser et choisir. |
-| **Hassan** | Validateur / opérateur sensible | Décisions, opérations privilégiées (sudo, GitHub, install Osaurus, secrets). |
+| **Claude Desktop** | Cortex / chef d'orchestre | Architecture, décisions (DEC-NNN), planification, documentation, briefs CLI. Écritures MCP courtes (< 200 lignes). |
+| **Claude CLI** | Hands intelligente | Bootstrap, implémentation Python, tests, debugging itératif. Lance les commandes shell (via `!` préfixe). Garde sa faculté de penser et choisir. |
+| **Hassan** | Validateur / opérateur sensible | Opérations privilégiées : `sudo`, `brew`, `git push`, lancement `mlx_lm.server`, créations comptes/repos, validations explicites avant `rm -rf`. |
 
 ### Convention briefs CLI
 
@@ -93,6 +106,14 @@ Si une écriture Desktop via MCP Filesystem échoue (timeout iCloud,
 fichier verrouillé, contenu trop long), Desktop bascule immédiatement
 en mode "préparation de brief CLI" sans insister.
 
+### Diagnostic — règle issue de DEC-016
+
+Quand on diagnostique un système fermé tiers (serveur, bibliothèque),
+**prévoir un test discriminant dans la DEC elle-même**. Ne pas se
+contenter d'une hypothèse plausible (cf. DEC-014 → DEC-016, ~24h
+perdues sur Osaurus faute d'avoir varié plus tôt les paramètres
+"modèle/template/serveur").
+
 ### Résolution de problèmes
 
 Avant de proposer une solution :
@@ -101,8 +122,8 @@ Avant de proposer une solution :
    d'optimAI (à venir Phase 1)
 2. Si lié à un cas d'usage TBS / Bassmati / QNAP, consulter le
    `DECISIONS.md` ou `TROUBLESHOOTING.md` du projet concerné
-3. Si lié à l'infrastructure Osaurus ou MLX, consulter `docs/` puis
-   web search
+3. Si lié à l'infrastructure mlx_lm.server ou MLX, consulter `docs/`
+   puis web search
 
 ## Architecture cible
 
@@ -122,53 +143,60 @@ Avant de proposer une solution :
 │  Limites : 10 iter / 5 min / 10 KB output       │
 └────────────────────┬────────────────────────────┘
                      │  HTTP OpenAI-compatible
-                     │  + session_id (KV cache)
+                     │  (KV cache automatique)
                      ▼
 ┌─────────────────────────────────────────────────┐
-│  HANDS — Osaurus + Qwen3-Coder-Next 8-bit MLX   │
-│  Tool-calling natif, exécution shell sandbox    │
-│  Mac Studio M2 Max 96 GB                         │
+│  HANDS — mlx_lm.server + Qwen2.5-Coder-32B-     │
+│          Instruct-4bit (~18 GB, MLX)            │
+│  Loopback only 127.0.0.1:1337                   │
+│  Mac Studio M2 Max 96 GB                        │
 └─────────────────────────────────────────────────┘
 ```
 
 Détails dans les DEC :
+
 - DEC-001 : Architecture trois couches
 - DEC-002 : Custom minimal Python (pas de framework)
-- DEC-003 : Osaurus + MLX
-- DEC-004 : Qwen3-Coder-Next 8-bit
 - DEC-005 : MCP stdio via FastMCP
 - DEC-006 : Patterns A et D prioritaires
 - DEC-007 : Limites worker
 - DEC-008 : Garde-fous sécurité
+- DEC-012 : Port 1337, loopback only
+- DEC-017 : `mlx_lm.server` comme couche d'inférence
+- DEC-018 : Qwen2.5-Coder-32B-Instruct-4bit comme worker
 
 ## Stack technique
 
 | Composant | Technologie | Justification |
 |-----------|-------------|---------------|
-| Langage | Python 3.12 (épinglé via `.python-version`, DEC-011) | Écosystème MCP + Osaurus client + asyncio, maturité 31 mois |
+| Langage | Python 3.12 (épinglé via `.python-version`, DEC-011) | Écosystème MCP + httpx + asyncio, maturité 31 mois |
 | Project manager | `uv` | Recommandé par le SDK MCP officiel, rapide |
 | Serveur MCP | `fastmcp` | Standard de facto, ~70% des serveurs MCP |
-| Client Osaurus | `httpx` async | OpenAI-compatible, retry/timeout natifs |
+| Client inférence | `httpx` async | OpenAI-compatible, retry/timeout natifs |
 | Validation | `pydantic` v2 | Schemas Task Spec / Report (livré avec FastMCP) |
-| Tests | `pytest` | Standard Python, fixtures JSON pour cas réels |
+| Tests | `pytest` + `pytest-asyncio` | Standard Python, fixtures JSON pour cas réels |
 | Linter | `ruff` | Vitesse, configuration simple |
 | Type checker | `mypy` (optionnel Phase 1) | Sûreté de type sur les schemas |
+| Serveur inférence | `mlx_lm.server` (Apple ML Explore, DEC-017) | Officiel, templates HF appliqués, KV cache |
+| Modèle worker | `mlx-community/Qwen2.5-Coder-32B-Instruct-4bit` (DEC-018) | Validé en live, coding ~GPT-4o, 18 GB en 4-bit |
 
 ## Build & Run Commands
-
-Commandes validées lors de la session CLI #1 (2026-05-17). Le serveur MCP
-lui-même n'est pas encore implémenté (placeholders Python) — il sera
-livré dans la session CLI #2+.
 
 ### Environnement de dev
 
 ```bash
-cd "/Users/hassanafif/.../production/optimAI"
+cd "/Users/hassanafif/Library/.../production/optimAI"
 
-uv sync                              # Install/sync deps, Python 3.12.x via uv
-uv run pytest                        # Run tests (no tests ran à ce stade)
-uv run ruff check .                  # Lint (placeholders compatibles)
-uv run python -m optimai.server      # Run MCP server stdio (placeholder, lève NotImplementedError)
+# Sync deps runtime + dev (DEC-011, dev extra dans pyproject.toml)
+uv sync --extra dev
+
+# Tests et lint
+uv run pytest
+uv run ruff check .
+
+# Lancement serveur MCP (placeholder en Phase 1 étape 3,
+# implémenté Phase 1 étape 9 — voir ROADMAP)
+uv run python -m optimai.server
 ```
 
 Deps résolues (lockées dans `uv.lock`, versionné) :
@@ -190,43 +218,79 @@ Deps résolues (lockées dans `uv.lock`, versionné) :
 - **venv** : `.venv/` créée automatiquement par `uv` à la racine, pas
   besoin de l'activer manuellement (utiliser `uv run` pour tout)
 
-### Osaurus (à installer Phase 1 étape 3, voir CLI_PROMPT_002 à venir)
+### Serveur d'inférence — `mlx_lm.server` (DEC-017)
+
+Installé hors du venv projet via `uv tool install mlx-lm` (Python isolé,
+cohérent avec `huggingface-cli` installé pareil). Lancement **manuel par
+Hassan dans un terminal dédié** (DEC-009, opération privilégiée) :
 
 ```bash
-# Installation — méthode à confirmer (Homebrew ou DMG GitHub releases)
-# Pull modèle :
-osaurus pull mlx-community/Qwen3-Coder-Next-8bit
-osaurus serve                       # http://127.0.0.1:8080
+mlx_lm.server \
+  --model mlx-community/Qwen2.5-Coder-32B-Instruct-4bit \
+  --host 127.0.0.1 \
+  --port 1337 \
+  --log-level INFO
 ```
+
+Arrêt : `Ctrl+C` dans le terminal. Pas d'autostart en Phase 1 — à
+ré-évaluer en Phase 4 (launchd LaunchAgent envisageable, cf. note
+DEC-017).
+
+**Règles dures (DEC-012 + DEC-017)** :
+
+- ❌ JAMAIS `--host 0.0.0.0` (exposition LAN interdite — la blacklist
+  bloque, défense en profondeur)
+- ❌ JAMAIS de variante avec authentification désactivée explicitement
+  exposée
+- ✅ Le UserWarning `mlx_lm.server is not recommended for production`
+  est **attendu et accepté** (cf. DEC-017, section sécurité — loopback
+  only mitige)
+
+### Modèle worker — Qwen2.5-Coder-32B-Instruct-4bit (DEC-018)
+
+Stocké dans `~/.cache/huggingface/hub/models--mlx-community--Qwen2.5-Coder-32B-Instruct-4bit/`
+(~17 GB sur disque, cache officiel HuggingFace utilisé par `mlx-lm`).
+
+Aucune action requise pour le télécharger : `mlx_lm.server` le pull
+automatiquement au premier démarrage si absent (Hassan l'a déjà fait
+en CLI #2).
+
+Le legacy `~/MLXModels/` a été supprimé en DEC-019 (Desktop #6).
+**Ne pas le recréer.**
 
 ## Sécurité — Checklist
 
 Détail complet dans DEC-008.
 
-- [x] Blacklist commandes shell (`rm -rf /`, `sudo`, `git push`, etc.)
+- [x] Blacklist commandes shell (`rm -rf /`, `sudo`, `git push`, `curl|sh`, etc.)
+- [x] Anti-`mlx_lm.server --host 0.0.0.0` dans la blacklist (DEC-012+017)
+- [x] Anti-`osaurus serve` en défense en profondeur dans la blacklist
+      (au cas où quelqu'un essayerait de réinstaller Osaurus — DEC-019)
 - [x] Sandbox chemin (workdir uniquement en écriture)
 - [x] Secrets `.env` jamais dans les prompts du worker
 - [x] Échec explicite, pas de fallback risqué
 - [x] Limites worker (10 iter / 5 min / 10 KB)
 - [ ] Sandboxing Docker (Phase 4, optionnel)
-- [ ] Détection regex tokens hardcodés (à implémenter Phase 1 step 4)
+- [ ] Détection regex tokens hardcodés étendue (à enrichir Phase 1 étape 4)
 
 ## Environment Variables
 
-Voir `.env.example` (à créer dans CLI_PROMPT_001) pour la liste
-complète.
+Source de vérité : `.env.example`. Copier en `.env` (gitignored).
 
-Clés critiques (Phase 1) :
+Clés critiques (Phase 1, DEC-017 + DEC-018) :
 
 | Variable | Défaut | Description |
 |----------|--------|-------------|
-| `OSAURUS_URL` | `http://127.0.0.1:8080/v1` | Endpoint OpenAI-compatible |
-| `OPTIMAI_MODEL` | `qwen3-coder-next-8bit` | Modèle worker |
-| `OPTIMAI_MAX_ITERATIONS` | `10` | Limite boucle worker |
-| `OPTIMAI_TIMEOUT_SECONDS` | `300` | Budget temps total (5 min) |
-| `OPTIMAI_MAX_OUTPUT_BYTES` | `10240` | Troncature output shell |
-| `OPTIMAI_BLACKLIST_FILE` | `config/blacklist.txt` | Liste commandes interdites |
+| `MLX_SERVER_URL` | `http://127.0.0.1:1337/v1` | Endpoint OpenAI-compatible (loopback DEC-012) |
+| `MLX_SERVER_PORT` | `1337` | Port (loopback only) |
+| `OPTIMAI_MODEL` | `mlx-community/Qwen2.5-Coder-32B-Instruct-4bit` | Modèle worker (DEC-018) |
+| `OPTIMAI_MAX_ITERATIONS` | `10` | Limite boucle worker (DEC-007) |
+| `OPTIMAI_TIMEOUT_SECONDS` | `300` | Budget temps total 5 min (DEC-007) |
+| `OPTIMAI_MAX_OUTPUT_BYTES` | `10240` | Troncature output shell 10 KB (DEC-007) |
+| `OPTIMAI_BLACKLIST_FILE` | `config/blacklist.txt` | Liste commandes interdites (DEC-008) |
+| `OPTIMAI_SANDBOX_STRICT` | `true` | Refus toute écriture hors workdir (DEC-008) |
 | `OPTIMAI_LOG_LEVEL` | `INFO` | Verbosité logs |
+| `OPTIMAI_LOG_FILE` | `logs/optimai.log` | Cible des logs Dispatcher |
 
 ## Commit Convention
 
@@ -259,3 +323,9 @@ Adaptés de TBS et Bassmati :
 | Desktop #1 | 2026-05-17 | Mac Studio | Initiation, DEC-001 → DEC-010, structure documentaire, brief CLI #1 |
 | CLI #1 | 2026-05-17 | Mac Studio | Bootstrap technique : structure projet, `pyproject.toml`, `.gitignore`, Git init + commit `9deed6e`, remote `origin` |
 | Desktop #2 | 2026-05-17 | Mac Studio | DEC-011 (Python 3.12), mises à jour DECISIONS/CLAUDE/ROADMAP post-CLI #1 |
+| Desktop #3 | 2026-05-17 | Mac Studio | DEC-012 (port Osaurus 1337), brief CLI_PROMPT_002 initial |
+| Desktop #4 | 2026-05-17/18 | Mac Studio | Plan B (DEC-013), diag Osaurus erroné (DEC-014), Plan C (DEC-015), patches du brief CLI |
+| CLI #2 (1ère partie) | 2026-05-18/19 | Mac Studio | Install Osaurus, pull Qwen3-Coder puis Qwen2.5-Coder, 3 modèles testés tous échoués, **test discriminant** qui révèle la cause réelle (Osaurus fautif) |
+| Desktop #5 | 2026-05-19 | Mac Studio | Diagnostic corrigé (DEC-016), bascule mlx_lm.server (DEC-017), Qwen2.5 confirmé sur preuves (DEC-018), cleanup Osaurus proposé (DEC-019), PATCH #3 du brief CLI, handover |
+| CLI #2 (2ème partie) | 2026-05-19 | Mac Studio | PATCH #3 exécuté bout-en-bout : `mlx_lm.server` validé (`prompt_tokens=39`, KV cache OK, Fibonacci OK), `.env.example` + `.env` + `config/blacklist.txt` finalisés, commit local `05d8bae` |
+| Desktop #6 | 2026-05-19 | Mac Studio | DEC-019 → ✅ Accepted, cleanup Osaurus exécuté (19 GB libérés), CLAUDE.md / ROADMAP.md / DECISIONS.md mis à jour, CLI_PROMPT_003 rédigé |
