@@ -27,3 +27,15 @@
 \bghp_[A-Za-z0-9]{36,}
 \bsk-[A-Za-z0-9]{32,}
 \bxoxb-\d+-\d+-
+
+# Forbid Osaurus LAN exposure (legacy DEC-012, kept as defense in depth
+# even after DEC-017 bascule — in case anyone tries to reinstall Osaurus)
+\bosaurus\s+serve\s+.*--expose\b
+\bosaurus\s+.*--host\s+0\.0\.0\.0
+
+# Forbid direct osaurus serve invocation (legacy DEC-014, kept as
+# defense in depth after DEC-017)
+\bosaurus\s+serve\b
+
+# Forbid mlx_lm.server LAN exposure (DEC-012 + DEC-017 — security)
+\bmlx_lm\.server\s+.*--host\s+(0\.0\.0\.0|::)
