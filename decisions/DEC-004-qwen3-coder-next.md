@@ -1,7 +1,7 @@
 # DEC-004 : Qwen3-Coder-Next 8-bit MLX (worker)
 
 **Date** : 2026-05-17
-**Statut** : ✅ Accepted
+**Statut** : ✅ Accepted (Plan B activé par [DEC-013](DEC-013-plan-b-qwen3-coder-30b-a3b.md) le 2026-05-17 — voir section "Plan B" en bas)
 
 ## Contexte
 
@@ -50,6 +50,14 @@ Modèle Hugging Face : `mlx-community/Qwen3-Coder-Next-8bit`.
   Docker QNAP, etc.) pour valider le choix 8-bit vs 4-bit
 
 ## Plan B
+
+> **⚠️ Activé le 2026-05-17 par [DEC-013](DEC-013-plan-b-qwen3-coder-30b-a3b.md)**
+>
+> Lors de l'install en session CLI #2 (Osaurus Model Manager + observation
+> mémoire dispo 48/96 GB), il a été décidé de partir directement sur
+> `mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit` (17.2 GB, variante
+> standard) plutôt que Coder-Next 8-bit ou 4-bit. Le retour vers
+> Coder-Next reste possible en Phase 4 sur cas concrets.
 
 Si Qwen3-Coder-Next 8-bit consomme trop de mémoire ou produit un TTFT
 trop élevé en pratique :

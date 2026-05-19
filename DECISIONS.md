@@ -28,6 +28,9 @@ Pour ajouter une nouvelle décision, voir `decisions/README.md`.
 | [DEC-010](decisions/DEC-010-git-private-repo.md) | Git activé, repo privé GitHub | ✅ | 2026-05-17 |
 | [DEC-011](decisions/DEC-011-python-3-12-baseline.md) | Python 3.12 baseline (`.python-version` épinglée) | ✅ | 2026-05-17 |
 | [DEC-012](decisions/DEC-012-osaurus-port-1337.md) | Port Osaurus 1337, écoute 127.0.0.1, `--expose` interdit | ✅ | 2026-05-17 |
+| [DEC-013](decisions/DEC-013-plan-b-qwen3-coder-30b-a3b.md) | Plan B activé — Qwen3-Coder-30B-A3B-Instruct-4bit (worker effectif) | 🔁 | 2026-05-17 |
+| [DEC-014](decisions/DEC-014-osaurus-template-limitation.md) | Osaurus — limite sur templates Jinja externes complexes + règles d'usage | ✅ | 2026-05-17 |
+| [DEC-015](decisions/DEC-015-qwen2-5-coder-32b-instruct.md) | Plan C — Qwen2.5-Coder-32B-Instruct-4bit (worker effectif) | ✅ | 2026-05-17 |
 
 ## Décisions à venir
 
