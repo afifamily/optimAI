@@ -1,7 +1,20 @@
 # DEC-003 : Osaurus + MLX comme couche d'inférence
 
 **Date** : 2026-05-17
-**Statut** : ✅ Accepted
+**Statut** : 🔁 Superseded by [DEC-017](DEC-017-mlx-lm-server-replaces-osaurus.md) le 2026-05-19 (cause : [DEC-016](DEC-016-osaurus-diagnostic-corrected.md))
+
+## ⛔ Statut final — Superseded
+
+> **Cette décision a été superseded le 2026-05-19** par
+> [DEC-017](DEC-017-mlx-lm-server-replaces-osaurus.md).
+>
+> Cause : Osaurus v0.18.28 n'applique pas les chat templates aux
+> modèles MLX déposés par l'utilisateur dans `~/MLXModels/` (cf.
+> [DEC-016](DEC-016-osaurus-diagnostic-corrected.md)). 3 modèles
+> testés, tous échoués à l'identique (`prompt_tokens=25` figé).
+>
+> Bascule vers `mlx_lm.server` (Apple ML Explore officiel) qui
+> applique correctement les templates. Confirmé par tests live.
 
 ## Contexte
 

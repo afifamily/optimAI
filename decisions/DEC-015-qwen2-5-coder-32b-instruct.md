@@ -1,9 +1,25 @@
 # DEC-015 : Qwen2.5-Coder-32B-Instruct-4bit (worker effectif — Plan C)
 
 **Date** : 2026-05-17
-**Statut** : ✅ Accepted
+**Statut** : 🔁 Superseded by [DEC-018](DEC-018-qwen2-5-coder-32b-confirmed.md) le 2026-05-19 (bonnes conclusions, mauvaises prémisses — fondé sur DEC-014 invalidée)
 **Supersède** : [DEC-013](DEC-013-plan-b-qwen3-coder-30b-a3b.md) (Plan B abandonné)
-**Cause** : [DEC-014](DEC-014-osaurus-template-limitation.md) (limite Osaurus)
+**Cause initiale** : [DEC-014](DEC-014-osaurus-template-limitation.md)
+
+## ⛔ Statut final — Superseded
+
+> **Cette décision a été superseded le 2026-05-19** par
+> [DEC-018](DEC-018-qwen2-5-coder-32b-confirmed.md).
+>
+> Le **choix de modèle** (Qwen2.5-Coder-32B-Instruct-4bit) reste
+> bon — validé en live par tests `mlx_lm.server` en session CLI #2
+> (2026-05-19). Mais les **prémisses** de DEC-015 étaient fausses :
+> on choisissait ce modèle parce que son template embarqué était
+> censé contourner la "limite Osaurus" de DEC-014. Or DEC-014 était
+> elle-même fondée sur un diagnostic racine erroné (cf.
+> [DEC-016](DEC-016-osaurus-diagnostic-corrected.md)).
+>
+> DEC-018 revalide le modèle sur les bonnes bases (tests live
+> mlx_lm.server, pas hypothèses template Osaurus).
 
 ## Contexte
 

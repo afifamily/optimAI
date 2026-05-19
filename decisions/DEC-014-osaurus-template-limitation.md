@@ -1,8 +1,24 @@
 # DEC-014 : Osaurus — limite sur templates Jinja externes complexes (Qwen3-Coder non supporté)
 
 **Date** : 2026-05-17
-**Statut** : ✅ Accepted
-**Relation** : Force l'abandon du modèle de DEC-013, supersédé par [DEC-015](DEC-015-qwen2-5-coder-32b-instruct.md)
+**Statut** : 🔁 Superseded by [DEC-016](DEC-016-osaurus-diagnostic-corrected.md) le 2026-05-19 (diagnostic racine erroné)
+
+## ⛔ Statut final — Superseded
+
+> **Cette décision a été superseded le 2026-05-19** par
+> [DEC-016](DEC-016-osaurus-diagnostic-corrected.md).
+>
+> Le diagnostic racine était erroné : on attribuait l'échec à la
+> complexité du template Jinja externe, alors que le vrai problème
+> est qu'**Osaurus v0.18.28 n'applique pas du tout les chat templates
+> aux modèles MLX déposés par l'utilisateur**. Test discriminant en
+> session CLI #2 (2026-05-19) : 3 modèles testés (templates simple
+> embarqué, simple embarqué, complexe séparé), tous `prompt_tokens=25`
+> identique → le serveur ne template aucun modèle user.
+>
+> Les 4 règles d'usage Osaurus de DEC-014 restent partiellement utiles
+> (multi-instance, redémarrage) mais sont obsolètes après la bascule
+> vers `mlx_lm.server` ([DEC-017](DEC-017-mlx-lm-server-replaces-osaurus.md)).
 
 ## Contexte
 
