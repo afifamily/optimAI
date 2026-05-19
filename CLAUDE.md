@@ -42,10 +42,11 @@ section "Évolution majeure 2026-05-19" de `DECISIONS.md`.
 | 🔴 | `ROADMAP.md` | Phases 1 → 4, statut courant |
 | 🟡 | `decisions/DEC-*` | Détails individuels par décision |
 | 🟡 | `docs/` | Architecture, patterns, troubleshooting (à venir Phase 1) |
+| 🟡 | `.drafts/claude/CLI/README.md` | Convention briefs CLI + répartition Desktop/CLI/Hassan |
 
-Si tu reprends en sortant d'un long gap : lis aussi
-`.drafts/claude/CLI/HANDOVER_session_2026-05-19.md` qui résume la bascule
-mlx_lm.server.
+Si tu reprends en sortant d'un long gap : lis aussi le dernier
+HANDOVER de `.drafts/claude/CLI/` (dossier gitignored, convention
+Bassmati — voir section "Drafts" plus bas).
 
 ### Commandes : toujours vérifiées
 
@@ -60,6 +61,25 @@ Avant de proposer une commande :
 
 Utiliser **MCP Filesystem** pour lire les fichiers du repo.
 Base path : `/Users/hassanafif/Library/Mobile Documents/com~apple~CloudDocs/Developer/my-projects/production/optimAI/`
+
+### Drafts (`.drafts/`)
+
+Le dossier `.drafts/` est **gitignored** (convention Bassmati, étendue
+à optimAI). Il contient les artefacts de travail transverses aux
+sessions : briefs CLI, HANDOVERs entre sessions, rapports, logs de
+debug, prompts utilisateur. Ces fichiers sont **partagés via iCloud
+Drive** et donc disponibles sur les deux machines de Hassan (Mac
+Studio + MacBook Pro), mais ne polluent pas l'historique Git.
+
+Sous-arborescence :
+
+- `.drafts/claude/CLI/` — briefs `CLI_PROMPT_NNN_*.md`, HANDOVERs
+  Desktop→CLI / CLI→Desktop, REPORTs CLI. **Voir
+  `.drafts/claude/CLI/README.md` pour la convention complète.**
+- `.drafts/reports/` — logs d'incidents conservés pour traçabilité
+  (ex. crash `.diag` Osaurus référencé dans DEC-016)
+- `.drafts/SPECS/`, `.drafts/docs/`, `.drafts/my-prompts/` — utilisés
+  ponctuellement par Hassan
 
 ### Projets liés
 
@@ -82,23 +102,55 @@ Base path : `/Users/hassanafif/Library/Mobile Documents/com~apple~CloudDocs/Deve
 
 | Acteur | Rôle | Périmètre |
 |--------|------|-----------|
-| **Claude Desktop** | Cortex / chef d'orchestre | Architecture, décisions (DEC-NNN), planification, documentation, briefs CLI. Écritures MCP courtes (< 200 lignes). |
-| **Claude CLI** | Hands intelligente | Bootstrap, implémentation Python, tests, debugging itératif. Lance les commandes shell (via `!` préfixe). Garde sa faculté de penser et choisir. |
-| **Hassan** | Validateur / opérateur sensible | Opérations privilégiées : `sudo`, `brew`, `git push`, lancement `mlx_lm.server`, créations comptes/repos, validations explicites avant `rm -rf`. |
+| **Claude Desktop** | Cortex / chef d'orchestre | Architecture, décisions (DEC-NNN), planification, documentation longue, briefs CLI. Écritures MCP courtes (< 200 lignes). **Pas d'exécution shell.** |
+| **Claude CLI** | Hands intelligente | Bootstrap technique, implémentation Python, tests, debugging itératif, **commandes shell d'investigation et de cleanup non-destructives** (du, lsof, find, ls, brew uninstall, etc.). Garde sa faculté de penser et choisir. |
+| **Hassan** | Validateur / opérateur sensible | Opérations privilégiées : `sudo`, `brew install`, `git push`, lancement `mlx_lm.server`, créations comptes/repos, validations explicites avant `rm -rf` / `rm` irréversibles, désinstallations système, opérations réseau (LAN/QNAP), gestion credentials. |
+
+### Quand Desktop doit **déléguer** à CLI plutôt qu'exécuter via Hassan
+
+**Leçon Desktop #6 (cleanup Osaurus, 2026-05-19)** : Desktop a fait
+exécuter à Hassan ~30 commandes shell à la main pour le cleanup
+Osaurus (vérif `lsof`, `du`, `find`, `brew uninstall`, etc.). Toutes
+ces commandes étaient du **bootstrap technique pur** — CLI aurait pu
+les batcher, exécuter, et présenter un rapport synthétique, en ne
+laissant à Hassan que la validation des `rm -rf` (qui restent
+opérations privilégiées DEC-009).
+
+**Règle à appliquer dès Desktop #7** : pour toute tâche impliquant
+**> 5 commandes shell d'investigation/cleanup non-destructives**,
+Desktop produit un mini-brief CLI plutôt que de dérouler les commandes
+en conversation. CLI exécute, demande validation Hassan aux étapes
+destructives uniquement, livre un rapport.
+
+Cas typiques candidats à déléguer à CLI :
+
+- Cleanup d'un outil obsolète (cf. Osaurus → DEC-019)
+- Diagnostic environnement (versions Python, état caches, etc.)
+- Validation post-déploiement (curl + grep + count)
+- Audit blacklist / config (relecture fichiers + cross-check)
+- Migration entre machines (sync iCloud, vérif paths)
+
+Cas qui restent en conversation Desktop direct :
+
+- Question/réponse architecturale (pas de shell)
+- Édition documentaire ciblée via MCP Filesystem
+- Validation rapide d'un état (1-3 commandes max)
+- Opérations privilégiées Hassan (qui de toute façon ne peuvent pas
+  être déléguées)
 
 ### Convention briefs CLI
 
-Quand Desktop a besoin que CLI prenne le relais, il produit un brief
-dans `.drafts/claude/CLI/CLI_PROMPT_NNN_*.md` avec :
+Documentée en détail dans `.drafts/claude/CLI/README.md`. En résumé :
 
-- Contexte et objectif
-- Prérequis (état attendu du repo avant)
-- Liste précise des actions
-- Critère de validation
-- DEC pertinentes à référencer
-
-CLI lit ce brief en début de session et exécute, tout en gardant son
-autonomie de jugement.
+- Tout passage Desktop → CLI s'accompagne d'un brief
+  `.drafts/claude/CLI/CLI_PROMPT_NNN_*.md`
+- Le brief contient : contexte, lectures obligatoires, prérequis,
+  étapes ordonnées, sanity checks, format de rapport de fin
+- CLI lit le brief, exécute en gardant son autonomie, produit un
+  REPORT en fin de session
+- Pour des **mini-briefs** (5-30 commandes shell, < 30 min), le brief
+  peut être court (5-15 lignes) et directement collé dans la
+  conversation CLI sans nécessairement créer un fichier
 
 ### Fallback Desktop → CLI
 
@@ -328,4 +380,5 @@ Adaptés de TBS et Bassmati :
 | CLI #2 (1ère partie) | 2026-05-18/19 | Mac Studio | Install Osaurus, pull Qwen3-Coder puis Qwen2.5-Coder, 3 modèles testés tous échoués, **test discriminant** qui révèle la cause réelle (Osaurus fautif) |
 | Desktop #5 | 2026-05-19 | Mac Studio | Diagnostic corrigé (DEC-016), bascule mlx_lm.server (DEC-017), Qwen2.5 confirmé sur preuves (DEC-018), cleanup Osaurus proposé (DEC-019), PATCH #3 du brief CLI, handover |
 | CLI #2 (2ème partie) | 2026-05-19 | Mac Studio | PATCH #3 exécuté bout-en-bout : `mlx_lm.server` validé (`prompt_tokens=39`, KV cache OK, Fibonacci OK), `.env.example` + `.env` + `config/blacklist.txt` finalisés, commit local `05d8bae` |
-| Desktop #6 | 2026-05-19 | Mac Studio | DEC-019 → ✅ Accepted, cleanup Osaurus exécuté (19 GB libérés), CLAUDE.md / ROADMAP.md / DECISIONS.md mis à jour, CLI_PROMPT_003 rédigé |
+| Desktop #6 | 2026-05-19 | Mac Studio | DEC-019 → ✅ Accepted, cleanup Osaurus exécuté (~19 GB libérés), CLAUDE.md / ROADMAP.md / DECISIONS.md mis à jour, CLI_PROMPT_003 rédigé, leçon "déléguer commandes shell à CLI" captée |
+| CLI #3 | 2026-05-19 | Mac Studio | _En cours au moment de cette mise à jour_ — `config.py` + schemas Pattern A + `shell.py` + `worker.py` + PoC scripté Pattern A sur cas XCTest TBS (brief CLI_PROMPT_003) |
