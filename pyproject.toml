@@ -41,3 +41,9 @@ testpaths = ["tests"]
 # Kept as a safety net post-move off iCloud (DEC-020); previously it also
 # masked the flaky editable install on the iCloud path (CLI #3 report).
 pythonpath = ["src"]
+# `live` tests require a running mlx_lm.server; excluded from the default
+# `pytest` run, opt-in via `uv run pytest -m live`.
+addopts = "-m 'not live'"
+markers = [
+    "live: requires a running mlx_lm.server on 127.0.0.1:1337 (DEC-017)",
+]
