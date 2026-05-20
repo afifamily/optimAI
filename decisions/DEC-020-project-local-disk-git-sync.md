@@ -1,9 +1,9 @@
 # DEC-020 : Projet hors iCloud — disque local, sync via Git uniquement
 
 **Date** : 2026-05-20
-**Statut** : 🔄 In progress (décision actée Desktop session #7 ; passe ✅
-Accepted une fois le `mv` physique + repoint MCP + re-validation sanity
-confirmés au nouveau chemin)
+**Statut** : ✅ Accepted (décision actée Desktop #7, exécutée et validée
+le même jour : `mv` → `~/Developer/optimAI`, `.venv` régénéré, repoint
+MCP fait, sanity verte au nouveau chemin)
 **Déclencheur** : Rapport CLI #3 §6 (install editable `uv` flaky sur
 chemin iCloud) + constat Desktop récurrent (commandes MCP Filesystem non
 fiables sur chemin iCloud)
@@ -130,3 +130,27 @@ façon dépendante : `mv ~/Developer/optimAI "<ancien chemin iCloud>/optimAI"`
 + repoint MCP inverse. Aucune réécriture Git (chemins relatifs partout,
 confirmé Desktop #7 : inspection des 5 modules + `pyproject.toml` +
 `.env.example` + PoC, zéro chemin absolu iCloud).
+
+## Validation (Desktop #7, 2026-05-20)
+
+Exécutée par Hassan le jour même, dans l'ordre du runbook :
+
+1. Serveur Qwen arrêté proprement (SIGTERM, libération des ~18 GB de
+   mémoire unifiée), terminaux fermés sur l'ancien chemin.
+2. `mv` iCloud → `~/Developer/optimAI` ; `.git` suivi.
+3. `.venv` régénéré (`rm -rf .venv && uv sync --extra dev`).
+4. Sanity verte au nouveau chemin :
+   - `git log` : `8b0ba39` (doc Desktop #7) sur `96c70ca`, sur `origin/main`
+   - `git remote -v` : `git@github.com:afifamily/optimAI.git` intact
+   - `uv run ruff check .` : clean
+   - `uv run pytest` : **52 passed**, rootdir `/Users/hassanafif/Developer/optimAI`,
+     **aucun `ModuleNotFoundError`**
+   - `import optimai` → `/Users/hassanafif/Developer/optimAI/src/optimai/__init__.py`
+     (install editable saine — cause racine iCloud éliminée)
+5. Repoint MCP Filesystem Desktop → `/Users/hassanafif/Developer/optimAI`
+   (via Settings / Extensions), Desktop redémarré. Accès MCP au nouveau
+   chemin confirmé opérationnel.
+
+Les deux causes racines (MCP Filesystem non fiable + install editable
+flaky) sont corrigées à la source, pas contournées. `pythonpath=src`
+repasse de béquille à filet de sécurité (DEC-021 / src-layout standard).

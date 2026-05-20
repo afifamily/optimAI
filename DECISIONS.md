@@ -35,7 +35,7 @@ Pour ajouter une nouvelle décision, voir `decisions/README.md`.
 | [DEC-017](decisions/DEC-017-mlx-lm-server-replaces-osaurus.md) | Bascule Osaurus → `mlx_lm.server` comme serveur d'inférence | ✅ | 2026-05-19 |
 | [DEC-018](decisions/DEC-018-qwen2-5-coder-32b-confirmed.md) | Qwen2.5-Coder-32B-Instruct-4bit confirmé comme worker (Phase 1) | ✅ | 2026-05-19 |
 | [DEC-019](decisions/DEC-019-osaurus-cleanup.md) | Cleanup Osaurus de la machine | ✅ | 2026-05-19 |
-| [DEC-020](decisions/DEC-020-project-local-disk-git-sync.md) | Projet hors iCloud — disque local, sync via Git | 🔄 | 2026-05-20 |
+| [DEC-020](decisions/DEC-020-project-local-disk-git-sync.md) | Projet hors iCloud — disque local, sync via Git | ✅ | 2026-05-20 |
 | [DEC-021](decisions/DEC-021-dispatcher-engine-pattern-registry.md) | Architecture Dispatcher — moteur unique + registre de patterns (Strategy) | 📝 | 2026-05-20 |
 
 ## Décisions à venir
@@ -235,14 +235,16 @@ Session longue, en deux temps, séparée par Desktop #5.
   timeout (à traiter au Pattern D — Execute peut forker), `validate_path_in_sandbox`
   non câblé dans `run()` (intentionnel Phase 1, sandbox = `cwd`), `.env`
   résolu relativement au `cwd` (→ « lancer depuis la racine repo »).
-- **DEC-020 rédigée** (🔄 In progress) : sortie iCloud → `~/Developer/optimAI`
-  local, Git unique mécanisme de sync. Justifications : MCP Filesystem non
-  fiable sur chemin iCloud (impact Desktop à chaque session) + install
-  editable flaky (impact runtime étape 9) ; projet intrinsèquement lié au
-  Mac Studio (env Qwen), MacBook en appoint sans test → perte de sync
-  native sans conséquence. `.drafts/` déménage avec le projet (non-sync
-  inter-machines assumé). Owner du `mv` = Hassan (entrelacé avec le repoint
-  MCP, Hassan-only ; timing critique : `mv` avant repoint).
+- **DEC-020 rédigée puis exécutée et validée** (✅ Accepted le jour même) :
+  sortie iCloud → `~/Developer/optimAI` local, Git unique mécanisme de
+  sync. Justifications : MCP Filesystem non fiable sur chemin iCloud
+  (impact Desktop à chaque session) + install editable flaky (impact
+  runtime étape 9) ; projet intrinsèquement lié au Mac Studio (env Qwen),
+  MacBook en appoint sans test → perte de sync native sans conséquence.
+  `.drafts/` déménagé avec le projet (non-sync inter-machines assumé).
+  Déménagement exécuté par Hassan (Qwen arrêté SIGTERM → `mv` → `.venv`
+  régénéré → repoint MCP) ; sanity verte au nouveau chemin (52 tests,
+  ruff clean, `import optimai` sain, zéro `ModuleNotFoundError`).
 - **DEC-007 annotée** : précision timeout par-commande (récupérable) vs
   timeout global de boucle (= le vrai budget).
 - Docs synchronisées : `ROADMAP.md` (Phase 1 étape 4 ✅, étape 5
