@@ -37,6 +37,7 @@ target-version = "py312"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-# src-layout: import optimai from src/ directly. Robust against the flaky
-# editable install on the iCloud-synced project path (see CLI #3 report).
+# src-layout: import optimai from src/ directly (standard for a src/ layout).
+# Kept as a safety net post-move off iCloud (DEC-020); previously it also
+# masked the flaky editable install on the iCloud path (CLI #3 report).
 pythonpath = ["src"]

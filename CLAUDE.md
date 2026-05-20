@@ -1,8 +1,8 @@
 # CLAUDE.md — optimAI Project Context
 
-> **Mode** : Phase 1 — Bootstrap + PoC, chaîne d'inférence validée
-> **Dernière mise à jour** : 2026-05-19 (Session Desktop #6 — post CLI #2
-> PATCH #3 validé, DEC-019 cleanup Osaurus exécuté)
+> **Mode** : Phase 1 — Bootstrap + PoC, Pattern A scripté validé (étape 4 ✅)
+> **Dernière mise à jour** : 2026-05-20 (Session Desktop #7 — CLI #3 validé,
+> DEC-020 sortie iCloud → disque local)
 
 ## Présentation
 
@@ -38,7 +38,7 @@ section "Évolution majeure 2026-05-19" de `DECISIONS.md`.
 
 | Priorité | Fichier | Contenu |
 |----------|---------|---------|
-| 🔴 | `DECISIONS.md` | Index des 19 décisions (DEC-001 → DEC-019, dont 6 superseded) |
+| 🔴 | `DECISIONS.md` | Index des 21 décisions (DEC-001 → DEC-021, dont 6 superseded) |
 | 🔴 | `ROADMAP.md` | Phases 1 → 4, statut courant |
 | 🟡 | `decisions/DEC-*` | Détails individuels par décision |
 | 🟡 | `docs/` | Architecture, patterns, troubleshooting (à venir Phase 1) |
@@ -60,16 +60,21 @@ Avant de proposer une commande :
 ### Accès fichiers
 
 Utiliser **MCP Filesystem** pour lire les fichiers du repo.
-Base path : `/Users/hassanafif/Library/Mobile Documents/com~apple~CloudDocs/Developer/my-projects/production/optimAI/`
+Base path (DEC-020 — projet sorti d'iCloud vers disque local) :
+`~/Developer/optimAI/`
 
 ### Drafts (`.drafts/`)
 
 Le dossier `.drafts/` est **gitignored** (convention Bassmati, étendue
 à optimAI). Il contient les artefacts de travail transverses aux
 sessions : briefs CLI, HANDOVERs entre sessions, rapports, logs de
-debug, prompts utilisateur. Ces fichiers sont **partagés via iCloud
-Drive** et donc disponibles sur les deux machines de Hassan (Mac
-Studio + MacBook Pro), mais ne polluent pas l'historique Git.
+debug, prompts utilisateur. Il ne pollue pas l'historique Git.
+
+Depuis **DEC-020** (projet sorti d'iCloud), `.drafts/` n'est **plus
+synchronisé entre machines** : étant gitignored, il vit uniquement là
+où le repo est cloné. Desktop et CLI tournent sur le Mac Studio, donc
+ce n'est pas un problème ; le MacBook (appoint, sans test) n'a pas
+besoin des briefs.
 
 Sous-arborescence :
 
@@ -237,7 +242,7 @@ Détails dans les DEC :
 ### Environnement de dev
 
 ```bash
-cd "/Users/hassanafif/Library/.../production/optimAI"
+cd ~/Developer/optimAI   # DEC-020 (anciennement sous iCloud)
 
 # Sync deps runtime + dev (DEC-011, dev extra dans pyproject.toml)
 uv sync --extra dev
@@ -329,6 +334,10 @@ Détail complet dans DEC-008.
 
 Source de vérité : `.env.example`. Copier en `.env` (gitignored).
 
+⚠️ Le `.env` est résolu **relativement au `cwd`** (`config.py`
+`env_file=".env"`). Toujours lancer les commandes depuis la **racine du
+repo**, sinon les valeurs par défaut s'appliquent silencieusement.
+
 Clés critiques (Phase 1, DEC-017 + DEC-018) :
 
 | Variable | Défaut | Description |
@@ -381,4 +390,5 @@ Adaptés de TBS et Bassmati :
 | Desktop #5 | 2026-05-19 | Mac Studio | Diagnostic corrigé (DEC-016), bascule mlx_lm.server (DEC-017), Qwen2.5 confirmé sur preuves (DEC-018), cleanup Osaurus proposé (DEC-019), PATCH #3 du brief CLI, handover |
 | CLI #2 (2ème partie) | 2026-05-19 | Mac Studio | PATCH #3 exécuté bout-en-bout : `mlx_lm.server` validé (`prompt_tokens=39`, KV cache OK, Fibonacci OK), `.env.example` + `.env` + `config/blacklist.txt` finalisés, commit local `05d8bae` |
 | Desktop #6 | 2026-05-19 | Mac Studio | DEC-019 → ✅ Accepted, cleanup Osaurus exécuté (~19 GB libérés), CLAUDE.md / ROADMAP.md / DECISIONS.md mis à jour, CLI_PROMPT_003 rédigé, leçon "déléguer commandes shell à CLI" captée |
-| CLI #3 | 2026-05-19 | Mac Studio | _En cours au moment de cette mise à jour_ — `config.py` + schemas Pattern A + `shell.py` + `worker.py` + PoC scripté Pattern A sur cas XCTest TBS (brief CLI_PROMPT_003) |
+| CLI #3 | 2026-05-19 | Mac Studio | `config.py` + schemas Pattern A + `shell.py` + `worker.py` + PoC scripté Pattern A (brief CLI_PROMPT_003) : 52 tests, ruff clean, PoC converge en 2 itérations, commit local `96c70ca` |
+| Desktop #7 | 2026-05-20 | Mac Studio | Inspection code CLI #3, DEC-020 (sortie iCloud → disque local), annotation DEC-007 (timeouts), sync ROADMAP/CLAUDE/DECISIONS, brief CLI_PROMPT_004 (promotion Pattern A), runbook déménagement |

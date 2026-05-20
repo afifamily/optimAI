@@ -60,3 +60,26 @@ est condensé).
   avec une formulation plus précise
 - ❌ Valeurs par défaut potentiellement à ajuster après benchmarks
   réels — facile à modifier dans `.env`
+
+## Précision — timeout par-commande vs timeout global (Desktop #7, CLI #3)
+
+Le PoC Pattern A (CLI #3) a clarifié la sémantique des timeouts, qui
+n'était pas explicite ici :
+
+- **Timeout global de boucle** (`OPTIMAI_TIMEOUT_SECONDS`, 5 min) = le
+  vrai garde-fou de budget. Appliqué via `asyncio.wait_for()` sur la
+  boucle complète. Son dépassement → `stop_reason="timeout"`,
+  `status="incomplete"`.
+- **Timeout par-commande** (paramètre de `shell.run`, borné à 30 s dans
+  le PoC) = **récupérable**. Une commande isolée qui dépasse son budget
+  est tuée (`CommandTimeout`), mais **n'abort pas la boucle** : le
+  résultat « TIMED OUT » est réinjecté au worker, qui choisit une
+  commande plus ciblée. `stop_reason="shell_error"` reste réservé aux
+  vraies erreurs shell non-timeout.
+
+Rationale : en diagnostic (Pattern A), une commande lente isolée (ex.
+un `find` trop large) ne doit pas griller toute la tâche ; le worker
+doit pouvoir se corriger. Le budget réel reste borné par le timeout
+global. À réévaluer pour le Pattern D (Execute), où une commande qui
+timeout peut avoir laissé un effet de bord — la récupération y est moins
+anodine (cf. brief CLI #4).

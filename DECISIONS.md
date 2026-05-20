@@ -35,10 +35,15 @@ Pour ajouter une nouvelle décision, voir `decisions/README.md`.
 | [DEC-017](decisions/DEC-017-mlx-lm-server-replaces-osaurus.md) | Bascule Osaurus → `mlx_lm.server` comme serveur d'inférence | ✅ | 2026-05-19 |
 | [DEC-018](decisions/DEC-018-qwen2-5-coder-32b-confirmed.md) | Qwen2.5-Coder-32B-Instruct-4bit confirmé comme worker (Phase 1) | ✅ | 2026-05-19 |
 | [DEC-019](decisions/DEC-019-osaurus-cleanup.md) | Cleanup Osaurus de la machine | ✅ | 2026-05-19 |
+| [DEC-020](decisions/DEC-020-project-local-disk-git-sync.md) | Projet hors iCloud — disque local, sync via Git | 🔄 | 2026-05-20 |
+| [DEC-021](decisions/DEC-021-dispatcher-engine-pattern-registry.md) | Architecture Dispatcher — moteur unique + registre de patterns (Strategy) | 📝 | 2026-05-20 |
 
 ## Décisions à venir
 
-_Aucune décision en cours de rédaction._
+_Aucune décision en cours de rédaction._ La candidate DEC-021 (contrat
+Cortex↔Hands : domaine via `spec.context`) a été fusionnée dans la
+DEC-021 ci-dessus (même question : « qu'est-ce qu'un pattern et que
+doit-il fournir ? »).
 
 ## Évolution majeure 2026-05-19
 
@@ -194,3 +199,67 @@ Session longue, en deux temps, séparée par Desktop #5.
 - Rédaction `CLI_PROMPT_003_shell_worker_pattern_a.md` (brief pour
   CLI #3 : implémentation `shell.py` + `worker.py` + premier test
   bout-en-bout du Pattern A sur cas XCTest TBS).
+
+### Session CLI #3 (2026-05-19)
+
+- Brief `CLI_PROMPT_003` exécuté bout-en-bout. 5 livrables : `config.py`
+  (Settings pydantic, limites DEC-007, singleton `lru_cache`), schemas
+  Pattern A (`DiagnoseSpec` + `DiagnoseReport` ; `Execute*` hors
+  périmètre), `shell.py` (sandboxé : blacklist, sandbox `cwd`, env sans
+  secrets, troncature 10 KB), `worker.py` (client async OpenAI-compat,
+  extraction `cached_tokens`), PoC scripté XCTest. **52 tests passent,
+  ruff clean, PoC converge en 2 itérations** (`status=complete`) sur
+  machine en état « Xcode actif ». Commit local `96c70ca` (push réservé
+  Hassan, DEC-009).
+- Décisions de latitude (DEC-009) : `httpx.MockTransport` plutôt que
+  `respx` (zéro dep dev en plus) ; `pytest pythonpath=["src"]` pour
+  contourner l'install editable `uv` **flaky sur le chemin iCloud** ;
+  `field_validator` de `workdir` attrape `FileNotFoundError` et relève
+  `ValueError` (Pydantic v2 ne wrappe pas les `OSError`) ; **timeout
+  par-commande traité comme récupérable** (réinjecté au worker ; le vrai
+  garde-fou de budget reste le timeout global, DEC-007) ; **system prompt
+  cadré** (périmètre toolchain, interdiction de scanner le FS) après une
+  v1 trop ouverte qui partait en `find` dans `$HOME` sans converger.
+- Remontées principales : install editable `uv` flaky sur chemin iCloud
+  (cause racine adressée par DEC-020) ; tendance du worker à
+  sur-investiguer tant que le périmètre n'est pas cadré (→ contrat
+  Cortex↔Hands, fusionné dans DEC-021).
+
+### Session Desktop #7 (2026-05-20)
+
+- Lecture HANDOVER Desktop #6 + REPORT CLI #3. **Inspection rapide** des
+  5 modules livrés : qualité confirmée (échec explicite partout, blacklist
+  avant spawn, env minimal sans secrets parent), `owns_client` de
+  `worker.chat` pré-satisfait déjà la reco « client partagé » de CLI #4.
+  3 observations forward portées au brief CLI #4 : kill de sous-arbre sur
+  timeout (à traiter au Pattern D — Execute peut forker), `validate_path_in_sandbox`
+  non câblé dans `run()` (intentionnel Phase 1, sandbox = `cwd`), `.env`
+  résolu relativement au `cwd` (→ « lancer depuis la racine repo »).
+- **DEC-020 rédigée** (🔄 In progress) : sortie iCloud → `~/Developer/optimAI`
+  local, Git unique mécanisme de sync. Justifications : MCP Filesystem non
+  fiable sur chemin iCloud (impact Desktop à chaque session) + install
+  editable flaky (impact runtime étape 9) ; projet intrinsèquement lié au
+  Mac Studio (env Qwen), MacBook en appoint sans test → perte de sync
+  native sans conséquence. `.drafts/` déménage avec le projet (non-sync
+  inter-machines assumé). Owner du `mv` = Hassan (entrelacé avec le repoint
+  MCP, Hassan-only ; timing critique : `mv` avant repoint).
+- **DEC-007 annotée** : précision timeout par-commande (récupérable) vs
+  timeout global de boucle (= le vrai budget).
+- Docs synchronisées : `ROADMAP.md` (Phase 1 étape 4 ✅, étape 5
+  partielle — schemas A faits, Execute restent), `CLAUDE.md` (historique
+  CLI #3 + Desktop #7, sync Git, base path, rappel « racine repo »),
+  index `DECISIONS.md`, toilettage commentaire `pyproject.toml`.
+- **DEC-021 rédigée** (📝 Proposed) : architecture Dispatcher = moteur de
+  boucle unique + registre de patterns (Strategy), suite à l'arbitrage
+  (b) + anticipation de la croissance du nombre de patterns (Phase 3).
+  Écarte explicitement la fragmentation `dispatcher_*.py`. Fusionne
+  l'ex-candidate DEC-021 (contrat Cortex↔Hands : domaine via
+  `spec.context`). Passe ✅ quand Execute (CLI #5) se branche sans
+  retoucher `base.py`.
+- Rédaction `CLI_PROMPT_004_*.md` (périmètre **Diagnose seul**, DEC-021) :
+  `dispatcher.py` moteur de boucle pur (sans rendu console),
+  `patterns/base.py` (Protocol `Pattern` + registre `@register`),
+  `patterns/diagnose.py` (stratégie A branchée, system prompt factorisé).
+  Execute reporté à CLI #5 (validation du contrat avant 2ᵉ pattern).
+  ROADMAP Phase 1 étapes 6 + 8.
+- Runbook déménagement fourni à Hassan en clôture de session.

@@ -7,7 +7,7 @@ chose d'utilisable avant la suivante.
 
 | Phase | Objectif | Statut |
 |-------|----------|--------|
-| **Phase 1** | Bootstrap + PoC Patterns A & D | 🚧 En cours (étape 4) |
+| **Phase 1** | Bootstrap + PoC Patterns A & D | 🚧 En cours (étape 6) |
 | **Phase 2** | Patterns B (Patch) & C (Create) | 📝 Planifiée |
 | **Phase 3** | Enrichissement collaboratif via TBS/Bassmati/QNAP | 📝 Planifiée |
 | **Phase 4** | Robustesse & observabilité | 📝 Planifiée |
@@ -42,16 +42,24 @@ intégrés à Claude Desktop et CLI, validés sur le cas XCTest TBS.
    - `config/blacklist.txt` consolidé (anti-`mlx_lm.server --host 0.0.0.0`
      + anti-`osaurus serve` en défense en profondeur)
    - Cleanup Osaurus exécuté (DEC-019 ✅ Accepted, ~19 GB récupérés)
-4. 🔄 **Module `shell.py` + Module `worker.py` + premier test Pattern A**
-   (CLI_PROMPT_003, session CLI #3 à venir)
-   - `shell.py` : exécution sandboxée (blacklist, sandbox chemin,
-     timeouts, troncature 10 KB), tests unitaires exhaustifs
-   - `worker.py` : client HTTP OpenAI-compat vers `mlx_lm.server`,
-     boucle d'itérations bornée (DEC-007), KV cache transparent
-   - Premier test Pattern A bout-en-bout sur fixture XCTest (cas TBS)
-5. 📝 **Schemas Pydantic**
-   - `DiagnoseSpec`, `DiagnoseReport`
-   - `ExecuteSpec`, `ExecuteReport`
+4. ✅ **`config.py` + `shell.py` + `worker.py` + schemas A + PoC Pattern A**
+   (CLI_PROMPT_003, session CLI #3, commit local `96c70ca`)
+   - `config.py` : Settings pydantic, source unique des limites DEC-007,
+     singleton `lru_cache`
+   - `shell.py` : exécution sandboxée (blacklist avant spawn, sandbox
+     `cwd`, timeouts, env explicite sans secrets, troncature 10 KB),
+     30 tests
+   - `worker.py` : client async OpenAI-compat vers `mlx_lm.server`,
+     extraction `cached_tokens` (KV cache), erreurs explicites,
+     10 tests mockés
+   - PoC scripté `scripts/poc_diagnose_xctest.py` : boucle Cortex-light
+     worker→shell→worker, **converge en 2 itérations** sur le cas XCTest
+     TBS (`status=complete`)
+   - Sanity : **52 tests passent, ruff clean, PoC exit 0**
+5. 🔄 **Schemas Pydantic** (partiel — CLI #3)
+   - ✅ `DiagnoseSpec`, `DiagnoseReport` (Pattern A, livrés CLI #3,
+     7 tests ; validateur `workdir` → `ValueError` si absent)
+   - 📝 `ExecuteSpec`, `ExecuteReport` (Pattern D, à venir CLI #4)
 6. 📝 **Pattern A — Diagnose** (complétion)
    - Module `patterns/diagnose.py` implémentation complète
    - Système prompt worker (en anglais), boucle d'investigation
