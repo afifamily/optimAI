@@ -15,6 +15,7 @@ import pytest
 from optimai import dispatcher as dispatcher_mod
 from optimai.config import Settings
 from optimai.dispatcher import PatternRejected, dispatch
+from optimai.patterns import base as patterns_base
 from optimai.schemas.report import DiagnoseReport
 from optimai.schemas.task_spec import DiagnoseSpec
 from optimai.shell import CommandResult, CommandTimeout, ShellError
@@ -314,7 +315,163 @@ async def test_dispatch_rejects_blacklisted_operator_text(tmp_path):
 
 
 # --------------------------------------------------------------------------
-# Architectural sanity (DEC-021): dispatcher.py imports nothing Diagnose-specific
+# DEC-022 — per-command timeout policy is consulted per-pattern by the engine
+# --------------------------------------------------------------------------
+
+
+def _install_dummy_pattern(name: str, *, on_timeout):
+    """Register an ad-hoc pattern that returns scripted Steps and a chosen policy."""
+
+    class _Dummy:
+        def __init__(self):
+            self.name = name
+            self.spec_model = DiagnoseSpec
+            self.build_calls: list[dict] = []
+
+        def system_prompt(self, spec):
+            return "dummy system"
+
+        def initial_user_message(self, spec):
+            return "dummy intro"
+
+        def operator_text(self, spec):
+            return spec.goal
+
+        def parse(self, worker_text):
+            # First reply -> a CMD; second reply -> a report.
+            if "ACTION: report" in worker_text:
+                return patterns_base.Step(
+                    kind="final",
+                    think="done",
+                    payload={
+                        "root_cause": "ok",
+                        "evidence": [],
+                        "temporary_fix": None,
+                        "permanent_fix": None,
+                    },
+                )
+            return patterns_base.Step(kind="command", think="try", cmd="sleep 99")
+
+        def build_report(self, **kwargs):
+            self.build_calls.append(kwargs)
+            return DiagnoseReport(
+                status=kwargs["status"],
+                stop_reason=kwargs["stop_reason"],
+                iterations_used=kwargs["iterations_used"],
+                commands_executed=kwargs["commands_executed"],
+                notes=kwargs["notes"][:1024],
+            )
+
+    instance = _Dummy()
+    if on_timeout is not None:
+        instance.on_command_timeout = on_timeout  # type: ignore[attr-defined]
+    patterns_base._REGISTRY[name] = instance
+    return instance
+
+
+@pytest.fixture
+def _registry_isolation():
+    snapshot = dict(patterns_base._REGISTRY)
+    yield
+    patterns_base._REGISTRY.clear()
+    patterns_base._REGISTRY.update(snapshot)
+
+
+async def test_dispatch_timeout_recover_continues_loop(monkeypatch, tmp_path, _registry_isolation):
+    """A pattern declaring `recover` keeps the loop going on per-cmd timeout."""
+    _install_dummy_pattern("dummy_recover", on_timeout=lambda cmd, step: "recover")
+    settings = _make_settings(max_iter=5, timeout=30)
+    spec = _spec(tmp_path)
+    responses = [_shell_block("sleep 99"), _report_block("recovered")]
+
+    calls = {"n": 0}
+
+    async def fake_run(cmd, workdir, *, patterns, timeout_seconds, max_output_bytes, env=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise CommandTimeout(f"fake timeout for: {cmd}")
+        return CommandResult(
+            cmd=cmd, exit_code=0, stdout="", stderr="",
+            stdout_truncated=False, stderr_truncated=False, duration_seconds=0.0,
+        )
+
+    monkeypatch.setattr(dispatcher_mod, "shell_run", fake_run)
+    async with _scripted_worker(responses) as client:
+        report = await dispatch("dummy_recover", spec, settings=settings, client=client)
+
+    assert report.status == "complete"
+    assert report.stop_reason == "converged"
+    assert report.iterations_used == 2
+
+
+async def test_dispatch_timeout_abort_returns_error(monkeypatch, tmp_path, _registry_isolation):
+    """A pattern declaring `abort` short-circuits with stop_reason=command_timeout."""
+    _install_dummy_pattern("dummy_abort", on_timeout=lambda cmd, step: "abort")
+    settings = _make_settings(max_iter=5, timeout=30)
+    spec = _spec(tmp_path)
+    responses = [_shell_block("sleep 99"), _report_block("never reached")]
+
+    async def fake_run(*_a, **_k):
+        raise CommandTimeout("fake per-cmd timeout")
+
+    monkeypatch.setattr(dispatcher_mod, "shell_run", fake_run)
+    async with _scripted_worker(responses) as client:
+        report = await dispatch("dummy_abort", spec, settings=settings, client=client)
+
+    assert report.status == "error"
+    assert report.stop_reason == "command_timeout"
+    assert report.iterations_used == 1
+    assert len(report.commands_executed) == 1
+    assert report.commands_executed[0]["exit"] == -1
+    assert "inconsistent" in report.notes.lower() or "abort" in report.notes.lower()
+
+
+async def test_dispatch_timeout_default_is_abort(monkeypatch, tmp_path, _registry_isolation):
+    """A pattern that does NOT declare on_command_timeout gets the safe default = abort.
+
+    This is the DEC-022 invariant: silent recovery is impossible for a pattern
+    that didn't think about it.
+    """
+    _install_dummy_pattern("dummy_silent", on_timeout=None)
+    settings = _make_settings(max_iter=5, timeout=30)
+    spec = _spec(tmp_path)
+    responses = [_shell_block("sleep 99")]
+
+    async def fake_run(*_a, **_k):
+        raise CommandTimeout("fake per-cmd timeout")
+
+    monkeypatch.setattr(dispatcher_mod, "shell_run", fake_run)
+    async with _scripted_worker(responses) as client:
+        report = await dispatch("dummy_silent", spec, settings=settings, client=client)
+
+    assert report.status == "error"
+    assert report.stop_reason == "command_timeout"
+
+
+async def test_dispatch_timeout_buggy_hook_defaults_to_abort(monkeypatch, tmp_path, _registry_isolation):
+    """If on_command_timeout raises, the engine falls back to abort (safe default)."""
+
+    def boom(cmd, step):
+        raise RuntimeError("buggy pattern")
+
+    _install_dummy_pattern("dummy_buggy", on_timeout=boom)
+    settings = _make_settings(max_iter=5, timeout=30)
+    spec = _spec(tmp_path)
+    responses = [_shell_block("sleep 99")]
+
+    async def fake_run(*_a, **_k):
+        raise CommandTimeout("fake per-cmd timeout")
+
+    monkeypatch.setattr(dispatcher_mod, "shell_run", fake_run)
+    async with _scripted_worker(responses) as client:
+        report = await dispatch("dummy_buggy", spec, settings=settings, client=client)
+
+    assert report.status == "error"
+    assert report.stop_reason == "command_timeout"
+
+
+# --------------------------------------------------------------------------
+# Architectural sanity (DEC-021): dispatcher.py imports nothing pattern-specific
 # --------------------------------------------------------------------------
 
 
@@ -325,3 +482,11 @@ def test_dispatcher_module_has_no_diagnose_imports():
     forbidden = ("DiagnoseReport", "DiagnoseSpec", "patterns.diagnose", "patterns import diagnose")
     for token in forbidden:
         assert token not in source, f"dispatcher.py leaks Diagnose specificity: {token!r}"
+
+
+def test_dispatcher_module_has_no_execute_imports():
+    """Same invariant for Execute (DEC-021 acceptance criterion)."""
+    source = Path(dispatcher_mod.__file__).read_text(encoding="utf-8")
+    forbidden = ("ExecuteReport", "ExecuteSpec", "patterns.execute", "patterns import execute")
+    for token in forbidden:
+        assert token not in source, f"dispatcher.py leaks Execute specificity: {token!r}"

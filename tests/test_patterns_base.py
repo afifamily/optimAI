@@ -58,6 +58,9 @@ def _make_dummy_pattern(name: str):
         ):
             return _DummySpec(goal=status)
 
+        def on_command_timeout(self, cmd, step):
+            return "abort"
+
     return _Dummy
 
 
@@ -137,7 +140,14 @@ def test_builtin_diagnose_registered_after_import():
 
 def test_pattern_protocol_required_methods():
     inst = get_pattern("diagnose")
-    for method in ("system_prompt", "initial_user_message", "operator_text", "parse", "build_report"):
+    for method in (
+        "system_prompt",
+        "initial_user_message",
+        "operator_text",
+        "parse",
+        "build_report",
+        "on_command_timeout",
+    ):
         assert callable(getattr(inst, method)), f"missing {method}"
 
 

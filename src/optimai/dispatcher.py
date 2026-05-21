@@ -17,7 +17,7 @@ import httpx
 from pydantic import BaseModel
 
 from optimai.config import Settings, get_settings
-from optimai.patterns.base import Pattern, get_pattern
+from optimai.patterns.base import Pattern, Step, get_pattern
 from optimai.shell import (
     BlacklistViolation,
     CommandTimeout,
@@ -38,11 +38,31 @@ class PatternRejected(Exception):
 def _per_command_timeout(global_timeout: int) -> int:
     """A single command is capped at 30 s OR the global budget, whichever is smaller.
 
-    Matches the PoC formula. The per-command cap is *recoverable* (the loop
-    reinjects the timeout into context and continues); the global budget is
-    the real DEC-007 guard, applied by `asyncio.wait_for` around the loop.
+    Matches the PoC formula. Whether a per-command timeout is recoverable is
+    decided per-pattern via `Pattern.on_command_timeout` (DEC-022); the global
+    budget is the real DEC-007 guard, applied by `asyncio.wait_for` around the
+    loop.
     """
     return min(30, global_timeout)
+
+
+def _resolve_timeout_policy(pattern: Pattern, cmd: str, step: Step) -> str:
+    """Consult the pattern's per-command timeout policy. Default = abort (DEC-022).
+
+    The safe default is enforced HERE (not in the Protocol) so a pattern that
+    omits `on_command_timeout` cannot silently inherit recovery — it gets the
+    prudent behavior. Anything other than the explicit string ``"recover"`` is
+    treated as abort, again on the safe-default principle.
+    """
+    hook = getattr(pattern, "on_command_timeout", None)
+    if hook is None:
+        return "abort"
+    try:
+        decision = hook(cmd, step)
+    except Exception as exc:  # noqa: BLE001 — a buggy pattern must not silently recover
+        logger.warning("dispatch: on_command_timeout raised %s — defaulting to abort", exc)
+        return "abort"
+    return "recover" if decision == "recover" else "abort"
 
 
 async def _run_loop(
@@ -107,21 +127,35 @@ async def _run_loop(
                     notes=f"blacklist violation: {exc}",
                 )
             except CommandTimeout as exc:
-                # Per-command cap is recoverable (DEC-007): tell the worker, loop on.
+                # DEC-022: per-pattern recovery policy. Default = abort (safe).
                 logger.info("dispatch: per-cmd timeout at iter=%d cmd=%r", iteration, cmd[:120])
                 commands_executed.append({"cmd": cmd, "exit": -1, "stdout_truncated": False})
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Command: {cmd}\n"
-                            f"Result: TIMED OUT and was killed (per-command limit, {exc}). "
-                            "Pick a faster, more targeted command — avoid scanning "
-                            "large directory trees."
-                        ),
-                    }
+                policy = _resolve_timeout_policy(pattern, cmd, step)
+                if policy == "recover":
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Command: {cmd}\n"
+                                f"Result: TIMED OUT and was killed (per-command limit, {exc}). "
+                                "Pick a faster, more targeted command — avoid scanning "
+                                "large directory trees."
+                            ),
+                        }
+                    )
+                    continue
+                # policy == "abort": surface the inconsistency, don't improvise.
+                return pattern.build_report(
+                    final_payload=None,
+                    commands_executed=commands_executed,
+                    stop_reason="command_timeout",
+                    iterations_used=iteration,
+                    status="error",
+                    notes=(
+                        f"command timeout (abort policy): {exc}. "
+                        "State after the killed command may be inconsistent."
+                    ),
                 )
-                continue
             except ShellError as exc:
                 logger.warning("dispatch: shell error at iter=%d: %s", iteration, exc)
                 commands_executed.append({"cmd": cmd, "exit": -1, "stdout_truncated": False})

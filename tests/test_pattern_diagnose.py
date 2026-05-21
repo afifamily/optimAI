@@ -210,6 +210,14 @@ def test_diagnose_pattern_spec_model(pattern):
     assert pattern.spec_model is DiagnoseSpec
 
 
+def test_diagnose_on_command_timeout_is_recover(pattern):
+    """DEC-022: Diagnose commands are read-only — recovery is safe and desirable."""
+    from optimai.patterns.base import Step
+
+    decision = pattern.on_command_timeout("find / -name foo", Step(kind="command", cmd="find / -name foo"))
+    assert decision == "recover"
+
+
 def test_system_prompt_is_constant_string(pattern, spec):
     # `system_prompt` is currently spec-independent; future refactors that vary it
     # should reconsider DEC-021's contract.

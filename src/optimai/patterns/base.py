@@ -16,6 +16,7 @@ from typing import Literal, Protocol, runtime_checkable
 from pydantic import BaseModel
 
 StepKind = Literal["command", "final", "invalid"]
+TimeoutPolicy = Literal["recover", "abort"]
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,21 @@ class Pattern(Protocol):
         notes: str,
     ) -> BaseModel:
         """Fabricate the typed report. `final_payload` is set iff status=complete."""
+        ...
+
+    def on_command_timeout(self, cmd: str, step: Step) -> TimeoutPolicy:
+        """Recovery policy when one shell command exceeds its per-cmd budget (DEC-022).
+
+        Returning ``"recover"`` lets the dispatcher reinject "TIMED OUT" and
+        continue the loop (Diagnose-style: read-only commands, no side effects
+        to worry about). Returning ``"abort"`` makes the dispatcher stop and
+        produce an error report (Execute-style: mutating commands may have
+        left partial side effects — surfacing the inconsistency beats
+        improvising on an unknown state).
+
+        DEC-022 invariant: a pattern that does NOT implement this hook gets
+        ``"abort"`` from the dispatcher, never silent recovery.
+        """
         ...
 
 

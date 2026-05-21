@@ -13,7 +13,7 @@ across diagnostic families without forking the prompt.
 
 from typing import Literal
 
-from optimai.patterns.base import Step, register
+from optimai.patterns.base import Step, TimeoutPolicy, register
 from optimai.schemas.report import DiagnoseReport
 from optimai.schemas.task_spec import DiagnoseSpec
 
@@ -141,6 +141,12 @@ class DiagnosePattern:
             return Step(kind="final", think=think, payload=payload)
 
         return Step(kind="invalid", reason=f"unrecognized ACTION {action!r}")
+
+    def on_command_timeout(self, cmd: str, step: Step) -> TimeoutPolicy:
+        # Diagnose commands are informational (xcode-select -p, --version, …) and
+        # leave no side effect, so a single slow command is safely retryable —
+        # the worker reacts to "TIMED OUT" by picking a tighter command (DEC-022).
+        return "recover"
 
     def build_report(
         self,
