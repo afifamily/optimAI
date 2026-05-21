@@ -38,10 +38,13 @@ Pour ajouter une nouvelle décision, voir `decisions/README.md`.
 | [DEC-020](decisions/DEC-020-project-local-disk-git-sync.md) | Projet hors iCloud — disque local, sync via Git | ✅ | 2026-05-20 |
 | [DEC-021](decisions/DEC-021-dispatcher-engine-pattern-registry.md) | Architecture Dispatcher — moteur unique + registre de patterns (Strategy) | ✅ | 2026-05-20 |
 | [DEC-022](decisions/DEC-022-per-command-timeout-policy.md) | Politique de timeout par-commande — par-pattern (Diagnose recover / Execute abort) | ✅ | 2026-05-20 |
+| [DEC-023](decisions/DEC-023-claude-cli-user-scope.md) | Intégration Claude CLI — scope `user` (`~/.claude.json`) | ✅ | 2026-05-21 |
 
 ## Décisions à venir
 
-_Aucune décision en cours de rédaction._ DEC-021 et DEC-022 sont passées
+DEC-023 actée Desktop #11 (scope `user` pour l'intégration Claude CLI ;
+exécution via runbook étape 10 — opération Hassan — à venir). DEC-021 et
+DEC-022 sont passées
 ✅ Accepted (Desktop #9, sur preuve CLI #5 : le contrat `Pattern` a tenu
 sur un 2ᵉ pattern par extension rétrocompatible).
 

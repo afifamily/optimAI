@@ -1,6 +1,6 @@
 # optimAI
 
-> **Statut** : 🚧 Phase 1 — Bootstrap & PoC
+> **Statut** : ✅ Phase 1 complète (étapes 1–11) — Patterns A & D intégrés Desktop + CLI
 > **Démarrage** : 2026-05-17
 
 Architecture hybride "Cortex / Hands" pour réduire la consommation de
@@ -25,8 +25,8 @@ Hassan exécute aujourd'hui à la main en mode `/optimized`.
                      │  HTTP OpenAI-compatible
                      ▼
 ┌─────────────────────────────────────────────────┐
-│  HANDS — Qwen3-Coder-Next via Osaurus (MLX)     │
-│  Exécute, itère, vérifie, tool-calling natif    │
+│  HANDS — Qwen2.5-Coder-32B via mlx_lm.server    │
+│  Exécute, itère, vérifie (MLX, Apple Silicon)   │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -38,16 +38,19 @@ exécuter les commandes shell du mode `/optimized`.
 
 | Fichier | Contenu |
 |---------|---------|
-| [`DECISIONS.md`](DECISIONS.md) | Index des 10 décisions architecturales |
+| [`DECISIONS.md`](DECISIONS.md) | Index des décisions architecturales (DEC-001 → 023) |
 | [`ROADMAP.md`](ROADMAP.md) | Phases 1 → 4 |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 3 couches, flux d'une requête, garde-fous |
+| [`docs/PATTERNS.md`](docs/PATTERNS.md) | Spec Patterns A & D, schémas E/S, exemples |
+| [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | Pièges d'exploitation + table de triage |
 | [`CLAUDE.md`](CLAUDE.md) | Contexte projet pour les sessions Claude futures |
 
 ## Stack
 
 - **Python 3.12+** géré via `uv`
 - **FastMCP** (serveur MCP stdio)
-- **Osaurus** (inférence MLX sur Apple Silicon)
-- **Qwen3-Coder-Next 8-bit** (modèle worker)
+- **mlx_lm.server** (inférence MLX sur Apple Silicon, DEC-017)
+- **Qwen2.5-Coder-32B-Instruct-4bit** (modèle worker, DEC-018)
 - **httpx async** (client OpenAI-compatible)
 - **Pydantic v2** (schemas Task Spec / Report)
 
@@ -61,9 +64,11 @@ exécuter les commandes shell du mode `/optimized`.
 
 ## Hardware cible
 
-Mac Studio M2 Max, 96 GB unified memory. Modèle Qwen3-Coder-Next 8-bit
-MLX (~85 GB) tient confortablement avec marge pour OS et contexte.
+Mac Studio M2 Max, 96 GB unified memory. Modèle
+Qwen2.5-Coder-32B-Instruct-4bit MLX (~18 GB) tient très confortablement
+avec large marge pour OS et contexte.
 
 ## Status
 
-Phase 1 en cours — voir [`ROADMAP.md`](ROADMAP.md) pour le détail.
+Phase 1 complète — voir [`ROADMAP.md`](ROADMAP.md) pour le détail et les
+phases 2 → 4 à venir.

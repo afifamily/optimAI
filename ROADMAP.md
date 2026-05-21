@@ -7,14 +7,14 @@ chose d'utilisable avant la suivante.
 
 | Phase | Objectif | Statut |
 |-------|----------|--------|
-| **Phase 1** | Bootstrap + PoC Patterns A & D | 🚧 En cours (étape 10) |
+| **Phase 1** | Bootstrap + PoC Patterns A & D | ✅ Complète (étapes 1–11) |
 | **Phase 2** | Patterns B (Patch) & C (Create) | 📝 Planifiée |
 | **Phase 3** | Enrichissement collaboratif via TBS/Bassmati/QNAP | 📝 Planifiée |
 | **Phase 4** | Robustesse & observabilité | 📝 Planifiée |
 
 ---
 
-## Phase 1 — Bootstrap + PoC (en cours)
+## Phase 1 — Bootstrap + PoC (complète)
 
 **Objectif** : Patterns A (Diagnose) et D (Execute) fonctionnels,
 intégrés à Claude Desktop et CLI, validés sur le cas XCTest TBS.
@@ -118,13 +118,36 @@ intégrés à Claude Desktop et CLI, validés sur le cas XCTest TBS.
      version Python, workdir = repo) → `DiagnoseReport` `status=complete`,
      `stop_reason=converged`, `iterations_used=3` ; chaîne Cortex → MCP →
      dispatch → worker `mlx_lm.server` → shell → report prouvée en prod
-10. 📝 **Intégration Claude CLI**
-    - Entrée dans `.mcp.json` des projets TBS / Bassmati / QNAP
-    - Test bout-en-bout depuis chaque projet
-11. 📝 **Documentation**
-    - `docs/ARCHITECTURE.md` (diagramme + flux)
-    - `docs/PATTERNS.md` (spec Patterns A & D, exemples)
-    - `TROUBLESHOOTING.md` initial
+10. ✅ **Intégration Claude CLI** (session Desktop #11, 2026-05-21, DEC-023)
+    - Scope **`user`** (`~/.claude.json`) plutôt que `.mcp.json` par projet
+      (DEC-023) : une entrée visible dans **tous** les projets, aucun fichier
+      déposé ni gitignoré dans TBS / Bassmati / QNAP. Import via
+      `claude mcp add-from-claude-desktop --scope user` (réutilise l'entrée
+      Desktop validée étape 9)
+    - Runbook : `.drafts/claude/CLI/RUNBOOK_etape10_claude_cli.md` (opération
+      Hassan, exécutée étape par étape)
+    - Vérifié : `claude mcp get optimai` → scope user, connecté ; `/mcp`
+      dans TBS / Bassmati / QNAP → 2 outils chargés ; `--directory` figé sur
+      optimAI indépendant du projet appelant
+    - **Test bout-en-bout réel par projet** : `optimai_diagnose` (workdir =
+      repo cible) → `DiagnoseReport` `status=complete`,
+      `stop_reason=converged`, 2 itérations, depuis TBS / Bassmati / QNAP et
+      avec trois Cortex (Opus 4.7, Sonnet 4.6, Haiku 4.5) — invariant
+      `workdir` ≠ `--directory` confirmé en pratique
+    - Pattern D validé live (étape 11) : `optimai_execute` sur pack mutant de
+      2 commandes ordonnées (`echo >` + vérif) → `status=complete`,
+      `converged`, `failed_command=null`, les 2 commandes à `exit=0` —
+      sémantique mutante prouvée, distincte du read-only Diagnose
+11. ✅ **Documentation** (session Desktop #11, 2026-05-21)
+    - `docs/ARCHITECTURE.md` : 3 couches, flux Mermaid, Dispatcher détaillé,
+      limites DEC-007, 4 couches garde-fous DEC-008, worker, transport stdio
+    - `docs/PATTERNS.md` : contrat commun, spec A & D (schémas E/S exacts +
+      `tool_description`), exemple Diagnose **réel** (trace étape 10), exemple
+      Execute **réel** (trace étape 11, pack mutant), vocabulaire `stop_reason`,
+      section « `workdir` : pourquoi pas de fallback »
+    - `TROUBLESHOOTING.md` : table de triage + pièges conceptuels (`workdir`
+      ≠ `--directory`, chemin absolu `uv`, `.env`/cwd, hygiène stdout, worker,
+      `add-json`, faux positif blacklist, reconnexion stdio)
 
 **Critère de complétion Phase 1** : Hassan peut, depuis Claude Desktop
 ou Claude CLI dans n'importe quel projet, demander "diagnose ce
