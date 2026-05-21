@@ -33,6 +33,7 @@ def _make_dummy_pattern(name: str):
         def __init__(self):
             self.name = name
             self.spec_model = _DummySpec
+            self.tool_description = "Dummy pattern used in unit tests."
 
         def system_prompt(self, spec):
             return "sys"

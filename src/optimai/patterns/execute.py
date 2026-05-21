@@ -71,6 +71,13 @@ class ExecutePattern:
 
     name: str = "execute"
     spec_model: type = ExecuteSpec
+    tool_description: str = (
+        "Run an ordered, pre-validated pack of shell commands (mutating). The "
+        "worker proceeds through `commands` one at a time, may interleave short "
+        "read-only diagnostics, and reports a compact verdict (summary + which "
+        "command failed if any). Aborts on per-command timeout — partial mutations "
+        "are surfaced, never improvised around."
+    )
 
     def system_prompt(self, spec: ExecuteSpec) -> str:
         return SYSTEM_PROMPT

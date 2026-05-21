@@ -79,6 +79,13 @@ class DiagnosePattern:
 
     name: str = "diagnose"
     spec_model: type = DiagnoseSpec
+    tool_description: str = (
+        "Read-only environment investigation. Given a `goal` and domain `context`, "
+        "the worker inspects toolchain state with informational shell commands "
+        "(no sudo, no mutations) and returns a verdict: root cause, evidence, "
+        "temporary fix, permanent fix. Use it to diagnose why a build/test tool "
+        "fails on this workstation."
+    )
 
     def system_prompt(self, spec: DiagnoseSpec) -> str:
         return SYSTEM_PROMPT

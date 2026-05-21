@@ -44,6 +44,14 @@ class Pattern(Protocol):
 
     name: str
     spec_model: type[BaseModel]
+    tool_description: str
+    """Short MCP tool blurb the Cortex reads to pick this pattern (DEC-005, DEC-021).
+
+    Lives on the pattern (next to `system_prompt`) — not in a central dict in the
+    server — so adding a pattern keeps `server.py` untouched. Keep it ≤ ~2
+    sentences, action-oriented ("when to use this tool"), and free of
+    instance-specific domain knowledge (same spirit as `system_prompt`).
+    """
 
     def system_prompt(self, spec: BaseModel) -> str:
         """Cadrage + protocole — must NOT contain task-specific domain knowledge.
