@@ -7,7 +7,7 @@ chose d'utilisable avant la suivante.
 
 | Phase | Objectif | Statut |
 |-------|----------|--------|
-| **Phase 1** | Bootstrap + PoC Patterns A & D | 🚧 En cours (étape 8) |
+| **Phase 1** | Bootstrap + PoC Patterns A & D | 🚧 En cours (étape 10) |
 | **Phase 2** | Patterns B (Patch) & C (Create) | 📝 Planifiée |
 | **Phase 3** | Enrichissement collaboratif via TBS/Bassmati/QNAP | 📝 Planifiée |
 | **Phase 4** | Robustesse & observabilité | 📝 Planifiée |
@@ -88,12 +88,36 @@ intégrés à Claude Desktop et CLI, validés sur le cas XCTest TBS.
    - **Test empirique DEC-021 réussi** : le contrat a tenu sur un 2ᵉ
      pattern par extension rétrocompatible (DEC-021 → ✅)
    - Tests : 91 → 124 actifs (+33) ; garde `no_execute_imports` ajoutée
-8. 📝 **Serveur MCP**
-   - Exposition `optimai_diagnose` et `optimai_execute`
-   - Transport stdio via FastMCP (DEC-005)
-9. 📝 **Intégration Claude Desktop**
-   - Entrée dans `claude_desktop_config.json`
-   - Test bout-en-bout
+8. ✅ **Serveur MCP** (CLI_PROMPT_006, session CLI #6, commit local `1a92b6e`)
+   - `server.py` : serveur FastMCP stdio (DEC-005) **piloté par le
+     registre** (DEC-021) — itère `available_patterns()` → un outil
+     `optimai_<name>` par pattern via `Tool.from_function`, schéma
+     d'entrée **aplati** depuis `spec_model.model_fields` ; zéro liste
+     d'outils en dur
+   - Hygiène stdio : logging fichier + miroir stderr (ERROR only),
+     **jamais stdout** (canal JSON-RPC) ; vérifié par test unitaire +
+     smoke subprocess (`printf '' | … > stdout.txt` → vide)
+   - `tool_description` ajouté au Protocol `Pattern` (extension
+     rétrocompatible) + déclaré par Diagnose/Execute ; `PatternRejected`
+     → `ToolError` à la frontière MCP
+   - Tests : 124 → 134 (+10) ; garde DEC-021
+     `test_server_tools_match_registry` + **preuve dynamique**
+     (`_GhostPattern` ajouté au registre apparaît comme outil sans
+     toucher `server.py`) ; ruff clean
+9. ✅ **Intégration Claude Desktop** (session Desktop #10, 2026-05-21)
+   - Entrée `optimai` ajoutée sous `mcpServers` dans
+     `claude_desktop_config.json` (commande `/opt/homebrew/bin/uv`,
+     `--directory <repo>` pour résoudre le `.env` au cwd) ; clé ajoutée
+     **à côté** de `preferences` (un seul fichier sur Claude Desktop
+     1.8089.1) ; aucun secret en config (lu depuis `.env`)
+   - Serveur listé **running** ; les deux outils `optimai_diagnose` /
+     `optimai_execute` chargés avec schéma aplati attendu (`goal`,
+     `workdir` requis ; `allowed_read_paths?` / `extra_blacklist?`
+     optionnels — `default_factory` matérialisés)
+   - **Test bout-en-bout réel validé** : `optimai_diagnose` (goal =
+     version Python, workdir = repo) → `DiagnoseReport` `status=complete`,
+     `stop_reason=converged`, `iterations_used=3` ; chaîne Cortex → MCP →
+     dispatch → worker `mlx_lm.server` → shell → report prouvée en prod
 10. 📝 **Intégration Claude CLI**
     - Entrée dans `.mcp.json` des projets TBS / Bassmati / QNAP
     - Test bout-en-bout depuis chaque projet

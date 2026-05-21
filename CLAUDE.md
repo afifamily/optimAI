@@ -1,8 +1,8 @@
 # CLAUDE.md — optimAI Project Context
 
-> **Mode** : Phase 1 — Bootstrap + PoC, Patterns A & D livrés (étape 7 ✅) ; prochain = serveur MCP
-> **Dernière mise à jour** : 2026-05-21 (Session Desktop #9 — CLI #5 validé,
-> DEC-021 + DEC-022 passées ✅ Accepted)
+> **Mode** : Phase 1 — Bootstrap + PoC, Claude Desktop intégré et validé bout-en-bout (étapes 8 + 9 ✅) ; prochain = intégration Claude CLI / `.mcp.json` projets (étape 10)
+> **Dernière mise à jour** : 2026-05-21 (Session Desktop #10 — CLI #6 validé,
+> serveur FastMCP stdio livré + intégré à Claude Desktop, ROADMAP étapes 8 + 9 ✅)
 
 ## Présentation
 
@@ -16,7 +16,7 @@ aujourd'hui à la main en mode `/optimized`.
 
 - **Cortex** : Claude Desktop / CLI / API
 - **Dispatcher** : Python 3.12 — moteur de boucle + registre de patterns
-  livrés CLI #4 (DEC-021) ; serveur FastMCP à venir (ROADMAP étape 8)
+  (CLI #4, DEC-021) ; serveur FastMCP stdio livré (CLI #6, ROADMAP étape 8)
 - **Hands** : `mlx_lm.server` (Apple ML Explore officiel) +
   `mlx-community/Qwen2.5-Coder-32B-Instruct-4bit` (~18 GB)
 - **Communication** : MCP stdio (Cortex ↔ Dispatcher), HTTP OpenAI-compat
@@ -252,8 +252,10 @@ uv sync --extra dev
 uv run pytest
 uv run ruff check .
 
-# Lancement serveur MCP (placeholder en Phase 1 étape 3,
-# implémenté Phase 1 étape 9 — voir ROADMAP)
+# Lancement serveur MCP stdio (livré CLI #6, ROADMAP étape 8).
+# Piloté normalement par l'hôte (Claude Desktop / CLI) ; en lancement
+# manuel il attend sur stdin (Ctrl-C pour sortir), logs en fichier +
+# miroir stderr (ERROR), rien sur stdout.
 uv run python -m optimai.server
 ```
 
@@ -397,3 +399,5 @@ Adaptés de TBS et Bassmati :
 | Desktop #8 | 2026-05-20 | Mac Studio | Lecture REPORT CLI #4 + inspection `base.py`/`dispatcher.py`, précision critère DEC-021 (extension rétrocompatible vs refonte), DEC-022 (politique timeout par-pattern : Diagnose recover / Execute abort), sync ROADMAP/CLAUDE/DECISIONS, brief CLI_PROMPT_005 (Execute) |
 | CLI #5 | 2026-05-21 | Mac Studio | Hook `on_command_timeout` + schemas Execute + `patterns/execute.py` (brief CLI_PROMPT_005, DEC-022) : option (1) pack borné, abort sur timeout mutant, 124 tests + 1 live, garde `no_execute_imports`, commit local `210fecd` |
 | Desktop #9 | 2026-05-21 | Mac Studio | Lecture REPORT CLI #5 + inspection `base.py`/`dispatcher.py`/`execute.py`, **DEC-021 + DEC-022 → ✅ Accepted** (contrat tenu sur 2ᵉ pattern par extension rétrocompatible), sync ROADMAP/CLAUDE/DECISIONS, HANDOVER Desktop #9 → #10 |
+| CLI #6 | 2026-05-21 | Mac Studio | Serveur FastMCP stdio (`server.py`) piloté par le registre (brief CLI_PROMPT_006, DEC-005/DEC-021) : 1 outil `optimai_<name>`/pattern via `Tool.from_function` (signature aplatie depuis `model_fields`), logging fichier + stderr(ERROR) jamais stdout, `PatternRejected`→`ToolError`, `tool_description` sur le Protocol ; 10 tests dont garde `test_server_tools_match_registry` + preuve dynamique `_GhostPattern` ; 134 tests, ruff clean, commit local `1a92b6e` |
+| Desktop #10 | 2026-05-21 | Mac Studio | Reprise étape 8 : plan design serveur MCP + brief CLI_PROMPT_006 ; au retour CLI #6, lecture REPORT + inspection `server.py`/`test_server.py`, **ROADMAP étape 8 → ✅** (DEC-021 confirmée sur 3ᵉ client du registre, hygiène stdout vérifiée) ; **intégration Claude Desktop (étape 9 → ✅)** : entrée `optimai` dans `claude_desktop_config.json` (runbook RUNBOOK_etape9), serveur **running**, test bout-en-bout réel `optimai_diagnose` → `DiagnoseReport` converged en 3 itérations ; sync ROADMAP/CLAUDE |
