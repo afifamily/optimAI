@@ -7,7 +7,7 @@ chose d'utilisable avant la suivante.
 
 | Phase | Objectif | Statut |
 |-------|----------|--------|
-| **Phase 1** | Bootstrap + PoC Patterns A & D | 🚧 En cours (étape 7) |
+| **Phase 1** | Bootstrap + PoC Patterns A & D | 🚧 En cours (étape 8) |
 | **Phase 2** | Patterns B (Patch) & C (Create) | 📝 Planifiée |
 | **Phase 3** | Enrichissement collaboratif via TBS/Bassmati/QNAP | 📝 Planifiée |
 | **Phase 4** | Robustesse & observabilité | 📝 Planifiée |
@@ -56,10 +56,12 @@ intégrés à Claude Desktop et CLI, validés sur le cas XCTest TBS.
      worker→shell→worker, **converge en 2 itérations** sur le cas XCTest
      TBS (`status=complete`)
    - Sanity : **52 tests passent, ruff clean, PoC exit 0**
-5. 🔄 **Schemas Pydantic** (partiel — CLI #3)
-   - ✅ `DiagnoseSpec`, `DiagnoseReport` (Pattern A, livrés CLI #3,
-     7 tests ; validateur `workdir` → `ValueError` si absent)
-   - 📝 `ExecuteSpec`, `ExecuteReport` (Pattern D, à venir CLI #5)
+5. ✅ **Schemas Pydantic** (complet)
+   - ✅ `DiagnoseSpec`, `DiagnoseReport` (Pattern A, CLI #3, 7 tests)
+   - ✅ `ExecuteSpec` (pack ordonné non-vide) / `ExecuteReport` (compact :
+     `summary` + `failed_command`) (Pattern D, CLI #5) ; validateur
+     `workdir` factorisé en helper partagé ; `StopReason` enrichi de
+     `command_timeout`
 6. ✅ **Dispatcher (moteur + registre) + Pattern A propre**
    (CLI_PROMPT_004, session CLI #4, commit local `57382f0`, DEC-021)
    - `patterns/base.py` : Protocol `Pattern` (5 méthodes) + `Step`
@@ -76,13 +78,16 @@ intégrés à Claude Desktop et CLI, validés sur le cas XCTest TBS.
      `dispatcher.py`, aucun XCTest en dur dans le prompt)
    - Smoke live validé par Hassan : converge en 2 itérations
      (`status=complete`), zéro régression vs CLI #3
-7. 📝 **Pattern D — Execute** (CLI #5)
-   - Schemas `ExecuteSpec` / `ExecuteReport`
-   - Module `patterns/execute.py` branché sur le moteur — **test
-     empirique de DEC-021** (le contrat tient-il sur un 2ᵉ pattern ?)
-   - Politique de timeout par-commande propre à Execute (DEC-022 :
-     abort par défaut, vs recover pour Diagnose)
-   - Test sur pack de commandes shell typique (build, test, validation)
+7. ✅ **Pattern D — Execute** (CLI_PROMPT_005, session CLI #5, commit local
+   `210fecd`, DEC-022)
+   - `patterns/execute.py` : stratégie D branchée sur le moteur, sémantique
+     option (1) — pack ordonné worker-driven, pas d'improvisation mutante
+   - Hook `on_command_timeout` (DEC-022) : Execute = `abort` (commandes
+     mutantes, état post-timeout inconnu) ; Diagnose = `recover` explicite ;
+     défaut sûr `abort` garanti par le moteur
+   - **Test empirique DEC-021 réussi** : le contrat a tenu sur un 2ᵉ
+     pattern par extension rétrocompatible (DEC-021 → ✅)
+   - Tests : 91 → 124 actifs (+33) ; garde `no_execute_imports` ajoutée
 8. 📝 **Serveur MCP**
    - Exposition `optimai_diagnose` et `optimai_execute`
    - Transport stdio via FastMCP (DEC-005)

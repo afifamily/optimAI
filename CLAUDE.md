@@ -1,8 +1,8 @@
 # CLAUDE.md — optimAI Project Context
 
-> **Mode** : Phase 1 — Bootstrap + PoC, Dispatcher + Pattern A propre (étape 6 ✅)
-> **Dernière mise à jour** : 2026-05-20 (Session Desktop #8 — CLI #4 validé,
-> DEC-021 dispatcher + registre, DEC-022 politique timeout par-pattern)
+> **Mode** : Phase 1 — Bootstrap + PoC, Patterns A & D livrés (étape 7 ✅) ; prochain = serveur MCP
+> **Dernière mise à jour** : 2026-05-21 (Session Desktop #9 — CLI #5 validé,
+> DEC-021 + DEC-022 passées ✅ Accepted)
 
 ## Présentation
 
@@ -395,3 +395,5 @@ Adaptés de TBS et Bassmati :
 | Desktop #7 | 2026-05-20 | Mac Studio | Inspection code CLI #3, DEC-020 (sortie iCloud → disque local), annotation DEC-007 (timeouts), sync ROADMAP/CLAUDE/DECISIONS, brief CLI_PROMPT_004 (promotion Pattern A), runbook déménagement |
 | CLI #4 | 2026-05-20 | Mac Studio | Dispatcher (moteur unique + registre `base.py`) + Pattern A propre `diagnose.py` (brief CLI_PROMPT_004, DEC-021) : domain knowledge → `spec.context`, 91 tests + 1 live, 2 gardes architecturaux verts, commit local `57382f0` |
 | Desktop #8 | 2026-05-20 | Mac Studio | Lecture REPORT CLI #4 + inspection `base.py`/`dispatcher.py`, précision critère DEC-021 (extension rétrocompatible vs refonte), DEC-022 (politique timeout par-pattern : Diagnose recover / Execute abort), sync ROADMAP/CLAUDE/DECISIONS, brief CLI_PROMPT_005 (Execute) |
+| CLI #5 | 2026-05-21 | Mac Studio | Hook `on_command_timeout` + schemas Execute + `patterns/execute.py` (brief CLI_PROMPT_005, DEC-022) : option (1) pack borné, abort sur timeout mutant, 124 tests + 1 live, garde `no_execute_imports`, commit local `210fecd` |
+| Desktop #9 | 2026-05-21 | Mac Studio | Lecture REPORT CLI #5 + inspection `base.py`/`dispatcher.py`/`execute.py`, **DEC-021 + DEC-022 → ✅ Accepted** (contrat tenu sur 2ᵉ pattern par extension rétrocompatible), sync ROADMAP/CLAUDE/DECISIONS, HANDOVER Desktop #9 → #10 |

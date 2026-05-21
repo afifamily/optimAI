@@ -1,9 +1,10 @@
 # DEC-021 : Architecture Dispatcher — moteur unique + registre de patterns (Strategy)
 
 **Date** : 2026-05-20
-**Statut** : 📝 Proposed (architecture actée Desktop #7 ; passe ✅ Accepted
-quand un 2ᵉ pattern — Execute, CLI #5 — se branche sans retoucher
-`patterns/base.py`, confirmant que le contrat est bien taillé)
+**Statut** : ✅ Accepted (architecture actée Desktop #7, validée
+empiriquement Desktop #9 sur preuve CLI #5 : Execute s'est branché par
+extension rétrocompatible — +1 méthode au Protocol, 0 signature existante
+modifiée, moteur toujours agnostique)
 **Déclencheur** : Arbitrage Desktop #7 sur la promotion du PoC Pattern A
 en `patterns/diagnose.py` + anticipation Hassan de la croissance du
 nombre de patterns (Phase 3 : collecte de patterns depuis TBS/Bassmati/QNAP)
@@ -165,6 +166,29 @@ L'invariant réellement protégé n'a jamais été « zéro ligne dans
 s'étend sans se refondre** ». L'addition probable de `on_command_timeout`
 (DEC-022) est précisément le **premier test** de cette distinction : si
 elle se fait par hook générique + déclaration par-pattern, DEC-021 passe ✅.
+
+## Verdict empirique (Desktop #9, sur preuve CLI #5) — ✅ PASSE
+
+CLI #5 a branché Execute (2ᵉ pattern réel). Vérifié par inspection du code
+(`base.py`, `dispatcher.py`, `execute.py`), pas seulement sur rapport :
+
+- **Contrat étendu par +1 méthode** (`on_command_timeout`), **0 signature
+  existante modifiée** — les 5 méthodes CLI #4 sont identiques au caractère
+  près. Côté ✅ du critère.
+- **Moteur modifié uniquement à l'endroit du handler `CommandTimeout`** :
+  le `continue` inconditionnel devient une consultation générique
+  (`_resolve_timeout_policy` via `getattr` + comparaison à la chaîne
+  `"recover"`). Aucune nouvelle branche de flow, aucune connaissance d'un
+  pattern.
+- **Les 2 gardes architecturaux verts** : `no_diagnose_imports` +
+  `no_execute_imports` (nouveau). Le moteur ne référence aucune stratégie
+  concrète.
+- **2 cas réels désormais branchés** : Diagnose (recover) + Execute (abort).
+  L'architecture absorbe un 2ᵉ pattern par addition mince — c'est la
+  preuve, pas l'intention.
+
+Le contrat `Pattern` a tenu. Prochains tests : Phase 2 (Patch/Create) et le
+serveur MCP (ROADMAP étape 8), qui itérera sur le registre.
 
 ## Trade-offs
 

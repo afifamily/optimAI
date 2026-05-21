@@ -36,15 +36,14 @@ Pour ajouter une nouvelle décision, voir `decisions/README.md`.
 | [DEC-018](decisions/DEC-018-qwen2-5-coder-32b-confirmed.md) | Qwen2.5-Coder-32B-Instruct-4bit confirmé comme worker (Phase 1) | ✅ | 2026-05-19 |
 | [DEC-019](decisions/DEC-019-osaurus-cleanup.md) | Cleanup Osaurus de la machine | ✅ | 2026-05-19 |
 | [DEC-020](decisions/DEC-020-project-local-disk-git-sync.md) | Projet hors iCloud — disque local, sync via Git | ✅ | 2026-05-20 |
-| [DEC-021](decisions/DEC-021-dispatcher-engine-pattern-registry.md) | Architecture Dispatcher — moteur unique + registre de patterns (Strategy) | 📝 | 2026-05-20 |
-| [DEC-022](decisions/DEC-022-per-command-timeout-policy.md) | Politique de timeout par-commande — par-pattern (Diagnose recover / Execute abort) | 📝 | 2026-05-20 |
+| [DEC-021](decisions/DEC-021-dispatcher-engine-pattern-registry.md) | Architecture Dispatcher — moteur unique + registre de patterns (Strategy) | ✅ | 2026-05-20 |
+| [DEC-022](decisions/DEC-022-per-command-timeout-policy.md) | Politique de timeout par-commande — par-pattern (Diagnose recover / Execute abort) | ✅ | 2026-05-20 |
 
 ## Décisions à venir
 
-_Aucune décision en cours de rédaction._ DEC-021 et DEC-022 (📝 Proposed)
-passent ✅ à l'issue de CLI #5 : DEC-021 si Execute se branche par extension
-rétrocompatible (pas de refonte), DEC-022 si Execute abort correctement sur
-timeout par-commande.
+_Aucune décision en cours de rédaction._ DEC-021 et DEC-022 sont passées
+✅ Accepted (Desktop #9, sur preuve CLI #5 : le contrat `Pattern` a tenu
+sur un 2ᵉ pattern par extension rétrocompatible).
 
 ## Évolution majeure 2026-05-19
 
@@ -333,3 +332,54 @@ Session longue, en deux temps, séparée par Desktop #5.
   le pack via la boucle, n'improvise aucune commande mutante hors pack).
   Écarté : (2) entièrement scripté — n'utiliserait ni le worker ni la
   boucle, donc ne testerait pas DEC-021. Confirmé par Hassan en clôture.
+
+### Session CLI #5 (2026-05-21)
+
+- Brief `CLI_PROMPT_005` exécuté bout-en-bout (commit local `210fecd`).
+  Livrables : hook `on_command_timeout` sur le Protocol (`base.py`),
+  branchement `_resolve_timeout_policy` dans le handler `CommandTimeout`
+  (`dispatcher.py`) + `stop_reason="command_timeout"`, schemas
+  `ExecuteSpec` (pack ordonné non-vide) / `ExecuteReport` (compact :
+  `summary` + `failed_command`), `patterns/execute.py` (option (1),
+  `abort` sur timeout), Diagnose `recover` explicite. **124 tests actifs
+  (+33) + 1 live, ruff clean.** Garde architectural étendu
+  (`no_execute_imports`).
+- **Verdict DEC-021 = PASSE** : contrat étendu par +1 méthode, 0 signature
+  existante modifiée ; moteur changé uniquement à l'endroit du handler
+  (consultation générique du hook) ; 2 gardes architecturaux verts.
+- Décisions de latitude (DEC-009) : invariant de sûreté DEC-022 placé
+  **dans le moteur** (`_resolve_timeout_policy`, défaut `abort`) plutôt
+  que dans le Protocol → un pattern qui oublie la méthode OU dont le hook
+  lève hérite d'`abort` ; `ExecuteReport` compact (2 champs, la trace
+  exhaustive vit dans `commands_executed`) ; auto-fill `failed_command`
+  depuis la dernière commande sur `status=error` ; `command_timeout` dans
+  le `StopReason` partagé (pas un Literal par report) ;
+  `_resolve_existing_workdir` factorisé (sans changer le comportement de
+  `DiagnoseSpec`).
+- Points remontés (§6) : smoke live Execute **non écrit** (optionnel,
+  ~30 lignes — non bloquant car l'intégration hook est couverte par tests
+  shell réel + worker mocké) ; smoke live Diagnose non rejoué (régression
+  improbable) ; ambivalence Protocol-déclare / moteur-garantit (volontaire,
+  safe-by-default) à arbitrer si le Protocol devient un jour strict.
+
+### Session Desktop #9 (2026-05-21)
+
+- Lecture REPORT CLI #5 + **inspection réelle** de `base.py`,
+  `dispatcher.py`, `execute.py` (le verdict « PASSE » du résumé vérifié
+  dans le code, pas accepté sur parole).
+- **DEC-021 → ✅ Accepted** : Execute branché par extension rétrocompatible
+  (+1 méthode, 0 signature modifiée), moteur toujours agnostique (2 gardes
+  verts), 2 patterns réels désormais (A recover, D abort). Verdict
+  empirique ajouté à la DEC.
+- **DEC-022 → ✅ Accepted** : hook implémenté, défaut sûr `abort` placé
+  dans le moteur. Mention spéciale au `try/except` qui rabat un hook bogué
+  sur `abort` — au-delà du strict demandé, bonne application de DEC-008 §4.
+- Reliquats notés pour plus tard (non bloquants) : smoke live Execute
+  (~30 lignes, à demander si désiré) ; dette `list[int]` holder pour
+  `iterations_used` (refacto moteur, axe 2 DEC-021) ; ambivalence
+  Protocol-strict vs safe-by-default (préférence actuelle : safe).
+- HANDOVER Desktop #9 → #10 rédigé (`.drafts/claude/CLI/HANDOVER_desktop9.md`) :
+  Phase 1 quasi-bouclée côté patterns, prochain gros morceau = serveur MCP
+  (ROADMAP étape 8).
+- Phase 1 : étapes 5 + 7 ✅ (schemas A & D complets ; Pattern D livré).
+  Reste étapes 8-11 (serveur MCP, intégrations Desktop/CLI, doc).

@@ -1,9 +1,9 @@
 # DEC-022 : Politique de timeout par-commande — par-pattern (Diagnose recover / Execute abort)
 
 **Date** : 2026-05-20
-**Statut** : 📝 Proposed (politique actée Desktop #8 ; passe ✅ Accepted
-quand CLI #5 l'implémente et qu'Execute abort correctement sur un timeout
-par-commande, sans refonte du moteur)
+**Statut** : ✅ Accepted (politique actée Desktop #8, implémentée et
+validée Desktop #9 sur preuve CLI #5 : hook `on_command_timeout` branché,
+Execute abort vérifié, défaut sûr `abort` appliqué dans le moteur)
 **Déclencheur** : REPORT CLI #4 §3 (point CLI #5 n°3) + annotation DEC-007
 (« timeout par-commande récupérable vs timeout global ») — arbitrage en
 amont du brief CLI #5
@@ -108,12 +108,35 @@ def on_command_timeout(self, cmd: str, step: Step) -> Literal["recover", "abort"
   **explicitement hors périmètre** ici (YAGNI) — abort par défaut pour
   Execute, à reconsidérer seulement si un cas réel le motive.
 
-## Note pour CLI #5
+## Note pour CLI #5 (état à l'émission du brief)
 
-Cette DEC ne demande **pas** de toucher Diagnose au-delà de lui faire
+Cette DEC ne demandait **pas** de toucher Diagnose au-delà de lui faire
 déclarer `recover` (son comportement actuel, rendu explicite). Le gros du
-travail est : (1) la méthode sur le Protocol, (2) le branchement dans le
+travail : (1) la méthode sur le Protocol, (2) le branchement dans le
 handler `CommandTimeout` du moteur, (3) Execute qui déclare `abort`,
 (4) un `stop_reason="command_timeout"` ajouté au vocabulaire des reports,
 (5) tests : Execute abort sur timeout par-commande, Diagnose recover
 inchangé.
+
+## Implémentation réalisée (CLI #5, validée Desktop #9) — ✅
+
+Les 5 points ci-dessus sont faits (commit `210fecd`). Vérifié par
+inspection du code, pas seulement sur rapport :
+
+- Hook `on_command_timeout(cmd, step) -> "recover"|"abort"` déclaré sur le
+  Protocol (alias `TimeoutPolicy`). Diagnose → `recover` explicite,
+  Execute → `abort` avec `# WARNING:` (état post-mutation inconnu).
+- **Invariant de sûreté placé dans le moteur, pas dans le Protocol** :
+  `_resolve_timeout_policy` retourne `recover` *uniquement* si le hook
+  existe, ne lève pas, et renvoie exactement `"recover"` ; **tout autre
+  cas → `abort`**. Conséquence (au-delà du strict demandé, et bien vu) :
+  un pattern qui *oublie* la méthode **ou dont le hook lève une exception**
+  hérite d'`abort`, jamais d'une récupération silencieuse. Application
+  correcte de DEC-008 §4 (échec sûr) à un cas non explicitement anticipé.
+- `stop_reason="command_timeout"` ajouté au `Literal` partagé `StopReason`
+  (choix CLI #5 : vocabulaire complet partagé plutôt qu'un Literal par
+  report ; conséquence documentée — `DiagnoseReport` l'accepte
+  techniquement bien qu'il ne le produise jamais en pratique).
+- Couverture : 6 tests dédiés (recover continue / abort error / défaut
+  abort si méthode absente / défaut abort si hook bogué / Diagnose recover
+  / Execute abort), non-régression Diagnose verte.
