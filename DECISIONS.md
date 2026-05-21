@@ -37,13 +37,14 @@ Pour ajouter une nouvelle décision, voir `decisions/README.md`.
 | [DEC-019](decisions/DEC-019-osaurus-cleanup.md) | Cleanup Osaurus de la machine | ✅ | 2026-05-19 |
 | [DEC-020](decisions/DEC-020-project-local-disk-git-sync.md) | Projet hors iCloud — disque local, sync via Git | ✅ | 2026-05-20 |
 | [DEC-021](decisions/DEC-021-dispatcher-engine-pattern-registry.md) | Architecture Dispatcher — moteur unique + registre de patterns (Strategy) | 📝 | 2026-05-20 |
+| [DEC-022](decisions/DEC-022-per-command-timeout-policy.md) | Politique de timeout par-commande — par-pattern (Diagnose recover / Execute abort) | 📝 | 2026-05-20 |
 
 ## Décisions à venir
 
-_Aucune décision en cours de rédaction._ La candidate DEC-021 (contrat
-Cortex↔Hands : domaine via `spec.context`) a été fusionnée dans la
-DEC-021 ci-dessus (même question : « qu'est-ce qu'un pattern et que
-doit-il fournir ? »).
+_Aucune décision en cours de rédaction._ DEC-021 et DEC-022 (📝 Proposed)
+passent ✅ à l'issue de CLI #5 : DEC-021 si Execute se branche par extension
+rétrocompatible (pas de refonte), DEC-022 si Execute abort correctement sur
+timeout par-commande.
 
 ## Évolution majeure 2026-05-19
 
@@ -265,3 +266,70 @@ Session longue, en deux temps, séparée par Desktop #5.
   Execute reporté à CLI #5 (validation du contrat avant 2ᵉ pattern).
   ROADMAP Phase 1 étapes 6 + 8.
 - Runbook déménagement fourni à Hassan en clôture de session.
+
+### Session CLI #4 (2026-05-20)
+
+- Brief `CLI_PROMPT_004` exécuté bout-en-bout (périmètre Diagnose seul,
+  DEC-021). Livrables (commit local `57382f0`) : `patterns/base.py`
+  (Protocol `Pattern` + `Step` dataclass + registre `@register`),
+  `dispatcher.py` réécrit (moteur unique agnostique), `patterns/diagnose.py`
+  (stratégie A), `patterns/__init__.py` (import side-effect d'enregistrement),
+  PoC réduit à un thin wrapper + smoke-test `@pytest.mark.live`.
+  **91 tests actifs + 1 live, ruff clean** (+39 vs CLI #3).
+- **Validation DEC-021 (sur Diagnose)** : les 2 gardes architecturaux
+  passent — `test_dispatcher_module_has_no_diagnose_imports` (le moteur
+  ne référence aucun symbole Diagnose) et
+  `test_system_prompt_carries_no_xctest_hard_knowledge` (le prompt ne
+  contient plus le domain knowledge XCTest). Le contrat `Pattern` a été
+  naturel pour Diagnose (découpe ligne-à-ligne du PoC, sans contorsion).
+- **Preuve empirique du contrat Cortex↔Hands** : smoke live (validé par
+  Hassan, `mlx_lm.server` actif) → le worker choisit `xcode-select -p`
+  alors que la commande ne figure plus dans le system prompt mais dans
+  `spec.context`. Converge en 2 itérations, verdict identique à CLI #3.
+- Décisions de latitude (DEC-009) : `Step` = dataclass frozen à
+  discriminant `kind` ; `build_report` reçoit un `final_payload: dict|None`
+  extrait par le moteur (le pattern ne walke pas la trace) ; rendu console
+  = `logging` standard (pas de callback, DEC-002) ; **4ᵉ méthode
+  `operator_text(spec)` ajoutée au Protocol** pour cibler le scrub
+  blacklist pré-vol (`spec.goal` vetté, `spec.context` intentionnellement
+  épargné car il porte légitimement des fixes nommés).
+- Points remontés pour Desktop : (5a) `iterations_used` partagé via
+  `list[int]` à 1 élément pour survivre au cancel `asyncio.wait_for`
+  (« laid mais isolé » — dette technique) ; (5c) import side-effect dans
+  `patterns/__init__.py` → auto-discovery `pkgutil` à envisager en Phase 3
+  (YAGNI avant) ; per-cmd timeout récupérable à trancher par DEC pour
+  Execute.
+
+### Session Desktop #8 (2026-05-20)
+
+- Lecture du REPORT CLI #4 + **inspection réelle** de `patterns/base.py`
+  et `dispatcher.py`. Verdict : excellent résultat, les 2 gardes
+  architecturaux sont la vraie victoire (DEC-021 défendue par le code, pas
+  par la discipline). Le contrat Cortex↔Hands est prouvé sur Diagnose.
+- **DEC-021 reste 📝 Proposed** : le test réel (le contrat tient-il sur un
+  2ᵉ pattern ?) n'a pas encore eu lieu — Diagnose seul = un point, pas une
+  droite.
+- **Critère DEC-021 précisé** (annotation dans la DEC) : le critère
+  littéral « sans toucher `base.py` » devient « extension rétrocompatible
+  OK / refonte KO » (Open/Closed). Précisé à froid avant CLI #5 pour ne
+  pas réinterpréter le critère a posteriori. La 4ᵉ méthode `operator_text`
+  déjà ajoutée + le hook `on_command_timeout` pressenti sont des extensions
+  rétrocompatibles, donc compatibles avec DEC-021.
+- **DEC-022 rédigée** (📝 Proposed) : politique de timeout par-commande
+  **par-pattern**. Diagnose = recover (read-only, sûr) ; Execute = abort
+  (commande mutante timeoutée = état inconnu, échec explicite DEC-008 §4) ;
+  défaut sûr = abort (un pattern qui n'explicite rien n'hérite pas d'une
+  récupération risquée). Mécanisme (hook sur le Protocol) = latitude CLI #5,
+  premier test concret du critère DEC-021 précisé.
+- Dette technique notée (non bloquante) : 5a (`list[int]` holder) — à
+  revoir lors d'une passe de refacto du moteur (axe 2 DEC-021).
+- Docs synchronisées : `ROADMAP.md` (étape 6 ✅, étape 7 = Execute/CLI #5,
+  Phase 1 → étape 7), `CLAUDE.md` (header, stack Dispatcher, historique
+  CLI #4 + Desktop #8, compte DEC → 22), index `DECISIONS.md` (DEC-022),
+  README CLI (brief #4 ✅, brief #5 émis, correction sync iCloud → DEC-020).
+- Rédaction `CLI_PROMPT_005_*.md` (Pattern D Execute, branché sur DEC-022).
+  Sémantique Execute tranchée : **option (1) worker-driven dans un pack
+  borné** (`ExecuteSpec.commands` fourni par le Cortex ; le worker exécute
+  le pack via la boucle, n'improvise aucune commande mutante hors pack).
+  Écarté : (2) entièrement scripté — n'utiliserait ni le worker ni la
+  boucle, donc ne testerait pas DEC-021. Confirmé par Hassan en clôture.

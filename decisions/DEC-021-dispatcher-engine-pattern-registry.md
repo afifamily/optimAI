@@ -8,7 +8,7 @@ quand un 2ᵉ pattern — Execute, CLI #5 — se branche sans retoucher
 en `patterns/diagnose.py` + anticipation Hassan de la croissance du
 nombre de patterns (Phase 3 : collecte de patterns depuis TBS/Bassmati/QNAP)
 **Lié à** : [DEC-002](DEC-002-custom-minimal-python.md) (minimal, pas de
-framework), [DEC-006](DEC-006-patterns-a-d-priority.md) (A & D prioritaires),
+framework), [DEC-006](DEC-006-patterns-priority-A-D.md) (A & D prioritaires),
 [DEC-007](DEC-007-loop-limits.md) (limites appliquées par le moteur),
 [DEC-008](DEC-008-security-guardrails.md) (blacklist/sandbox dans le moteur)
 **Fusionne** : l'ancienne candidate DEC-021 « contrat Cortex↔Hands : domain
@@ -139,6 +139,32 @@ Hands = comment l'exécuter » qui rend les patterns génériques et réutilisab
   branché sur le moteur **sans toucher `base.py`** → validation du contrat
   → promotion de cette DEC en ✅ Accepted.
 - **ROADMAP étape 8** : serveur MCP itère sur le registre.
+
+## Critère de passage en ✅ Accepted (précisé Desktop #8, avant CLI #5)
+
+Le critère initial — « Execute se branche sans toucher `patterns/base.py` »
+— était un proxy littéral. Précisé à froid **avant** de voir le résultat
+de CLI #5, pour éviter toute réinterprétation opportuniste du critère a
+posteriori :
+
+- ✅ **Extension rétrocompatible du contrat** — ajouter une *nouvelle*
+  méthode au Protocol que le moteur consulte de façon **générique** (ex.
+  un hook `on_command_timeout(...) -> "recover" | "abort"` que le moteur
+  appelle sans rien savoir du pattern), chaque pattern déclarant sa
+  politique. Le moteur reste agnostique, le registre absorbe. → DEC-021
+  **tient** (principe Open/Closed : ouvert à l'extension, fermé à la
+  modification cassante).
+- ❌ **Refonte** — devoir modifier la *boucle* du moteur pour un besoin
+  spécifique à Execute, faire fuiter un import Diagnose/Execute dans
+  `dispatcher.py`, ou changer une signature *existante* du Protocol de
+  façon cassante. → DEC-021 **a raté sa cible**, à reconnaître
+  explicitement.
+
+L'invariant réellement protégé n'a jamais été « zéro ligne dans
+`base.py` » mais « **le moteur ne connaît aucun pattern, et le contrat
+s'étend sans se refondre** ». L'addition probable de `on_command_timeout`
+(DEC-022) est précisément le **premier test** de cette distinction : si
+elle se fait par hook générique + déclaration par-pattern, DEC-021 passe ✅.
 
 ## Trade-offs
 

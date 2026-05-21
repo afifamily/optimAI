@@ -1,8 +1,8 @@
 # CLAUDE.md — optimAI Project Context
 
-> **Mode** : Phase 1 — Bootstrap + PoC, Pattern A scripté validé (étape 4 ✅)
-> **Dernière mise à jour** : 2026-05-20 (Session Desktop #7 — CLI #3 validé,
-> DEC-020 sortie iCloud → disque local)
+> **Mode** : Phase 1 — Bootstrap + PoC, Dispatcher + Pattern A propre (étape 6 ✅)
+> **Dernière mise à jour** : 2026-05-20 (Session Desktop #8 — CLI #4 validé,
+> DEC-021 dispatcher + registre, DEC-022 politique timeout par-pattern)
 
 ## Présentation
 
@@ -15,7 +15,8 @@ aujourd'hui à la main en mode `/optimized`.
 **Stack actuelle (DEC-017 + DEC-018)** :
 
 - **Cortex** : Claude Desktop / CLI / API
-- **Dispatcher** : Python 3.12 + FastMCP (à implémenter — sessions CLI #3+)
+- **Dispatcher** : Python 3.12 — moteur de boucle + registre de patterns
+  livrés CLI #4 (DEC-021) ; serveur FastMCP à venir (ROADMAP étape 8)
 - **Hands** : `mlx_lm.server` (Apple ML Explore officiel) +
   `mlx-community/Qwen2.5-Coder-32B-Instruct-4bit` (~18 GB)
 - **Communication** : MCP stdio (Cortex ↔ Dispatcher), HTTP OpenAI-compat
@@ -38,7 +39,7 @@ section "Évolution majeure 2026-05-19" de `DECISIONS.md`.
 
 | Priorité | Fichier | Contenu |
 |----------|---------|---------|
-| 🔴 | `DECISIONS.md` | Index des 21 décisions (DEC-001 → DEC-021, dont 6 superseded) |
+| 🔴 | `DECISIONS.md` | Index des 22 décisions (DEC-001 → DEC-022, dont 6 superseded) |
 | 🔴 | `ROADMAP.md` | Phases 1 → 4, statut courant |
 | 🟡 | `decisions/DEC-*` | Détails individuels par décision |
 | 🟡 | `docs/` | Architecture, patterns, troubleshooting (à venir Phase 1) |
@@ -392,3 +393,5 @@ Adaptés de TBS et Bassmati :
 | Desktop #6 | 2026-05-19 | Mac Studio | DEC-019 → ✅ Accepted, cleanup Osaurus exécuté (~19 GB libérés), CLAUDE.md / ROADMAP.md / DECISIONS.md mis à jour, CLI_PROMPT_003 rédigé, leçon "déléguer commandes shell à CLI" captée |
 | CLI #3 | 2026-05-19 | Mac Studio | `config.py` + schemas Pattern A + `shell.py` + `worker.py` + PoC scripté Pattern A (brief CLI_PROMPT_003) : 52 tests, ruff clean, PoC converge en 2 itérations, commit local `96c70ca` |
 | Desktop #7 | 2026-05-20 | Mac Studio | Inspection code CLI #3, DEC-020 (sortie iCloud → disque local), annotation DEC-007 (timeouts), sync ROADMAP/CLAUDE/DECISIONS, brief CLI_PROMPT_004 (promotion Pattern A), runbook déménagement |
+| CLI #4 | 2026-05-20 | Mac Studio | Dispatcher (moteur unique + registre `base.py`) + Pattern A propre `diagnose.py` (brief CLI_PROMPT_004, DEC-021) : domain knowledge → `spec.context`, 91 tests + 1 live, 2 gardes architecturaux verts, commit local `57382f0` |
+| Desktop #8 | 2026-05-20 | Mac Studio | Lecture REPORT CLI #4 + inspection `base.py`/`dispatcher.py`, précision critère DEC-021 (extension rétrocompatible vs refonte), DEC-022 (politique timeout par-pattern : Diagnose recover / Execute abort), sync ROADMAP/CLAUDE/DECISIONS, brief CLI_PROMPT_005 (Execute) |

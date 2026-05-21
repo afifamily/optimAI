@@ -7,7 +7,7 @@ chose d'utilisable avant la suivante.
 
 | Phase | Objectif | Statut |
 |-------|----------|--------|
-| **Phase 1** | Bootstrap + PoC Patterns A & D | 🚧 En cours (étape 6) |
+| **Phase 1** | Bootstrap + PoC Patterns A & D | 🚧 En cours (étape 7) |
 | **Phase 2** | Patterns B (Patch) & C (Create) | 📝 Planifiée |
 | **Phase 3** | Enrichissement collaboratif via TBS/Bassmati/QNAP | 📝 Planifiée |
 | **Phase 4** | Robustesse & observabilité | 📝 Planifiée |
@@ -59,13 +59,29 @@ intégrés à Claude Desktop et CLI, validés sur le cas XCTest TBS.
 5. 🔄 **Schemas Pydantic** (partiel — CLI #3)
    - ✅ `DiagnoseSpec`, `DiagnoseReport` (Pattern A, livrés CLI #3,
      7 tests ; validateur `workdir` → `ValueError` si absent)
-   - 📝 `ExecuteSpec`, `ExecuteReport` (Pattern D, à venir CLI #4)
-6. 📝 **Pattern A — Diagnose** (complétion)
-   - Module `patterns/diagnose.py` implémentation complète
-   - Système prompt worker (en anglais), boucle d'investigation
-   - Tests sur fixtures TBS troubleshooting
-7. 📝 **Pattern D — Execute**
-   - Module `patterns/execute.py`
+   - 📝 `ExecuteSpec`, `ExecuteReport` (Pattern D, à venir CLI #5)
+6. ✅ **Dispatcher (moteur + registre) + Pattern A propre**
+   (CLI_PROMPT_004, session CLI #4, commit local `57382f0`, DEC-021)
+   - `patterns/base.py` : Protocol `Pattern` (5 méthodes) + `Step`
+     dataclass + registre `@register` / `get_pattern` / `available_patterns`
+   - `dispatcher.py` : moteur de boucle **unique et agnostique du
+     pattern**, applique DEC-007 (compteur + `asyncio.wait_for` global +
+     per-cmd timeout récupérable) et DEC-008 (blacklist + scrub
+     `operator_text` pré-vol)
+   - `patterns/diagnose.py` : stratégie A ; domain knowledge XCTest
+     **retiré du prompt → injecté via `spec.context`** (contrat
+     Cortex↔Hands, DEC-021)
+   - Tests : 52 → 91 actifs (+39) + 1 smoke `@pytest.mark.live` ;
+     2 gardes architecturaux verts (aucun import Diagnose dans
+     `dispatcher.py`, aucun XCTest en dur dans le prompt)
+   - Smoke live validé par Hassan : converge en 2 itérations
+     (`status=complete`), zéro régression vs CLI #3
+7. 📝 **Pattern D — Execute** (CLI #5)
+   - Schemas `ExecuteSpec` / `ExecuteReport`
+   - Module `patterns/execute.py` branché sur le moteur — **test
+     empirique de DEC-021** (le contrat tient-il sur un 2ᵉ pattern ?)
+   - Politique de timeout par-commande propre à Execute (DEC-022 :
+     abort par défaut, vs recover pour Diagnose)
    - Test sur pack de commandes shell typique (build, test, validation)
 8. 📝 **Serveur MCP**
    - Exposition `optimai_diagnose` et `optimai_execute`
