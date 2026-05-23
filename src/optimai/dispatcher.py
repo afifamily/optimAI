@@ -6,8 +6,10 @@ enforcement, and the worker correction protocol. Every task-specific concern
 (system prompt, parser, report shape) is delegated to a `Pattern` strategy
 resolved from the registry.
 
-This module must stay free of any Diagnose/Execute-specific import — that
-invariant is what makes DEC-021's "axis 1 absorbed by the registry" claim hold.
+This module must stay free of any pattern-specific import (Diagnose, Execute,
+Patch, Create, ...). The Phase-2 mutation phase (DEC-024) is wired by
+consulting OPTIONAL hooks via ``getattr`` — never by importing a pattern —
+so the "axis 1 absorbed by the registry" claim of DEC-021 keeps holding.
 """
 
 import asyncio
@@ -17,7 +19,7 @@ import httpx
 from pydantic import BaseModel
 
 from optimai.config import Settings, get_settings
-from optimai.patterns.base import Pattern, Step, get_pattern
+from optimai.patterns.base import MutationResult, Pattern, Step, get_pattern
 from optimai.shell import (
     BlacklistViolation,
     CommandTimeout,
@@ -26,6 +28,7 @@ from optimai.shell import (
     load_blacklist,
 )
 from optimai.shell import run as shell_run
+from optimai.snapshot import Snapshot
 from optimai.worker import WorkerError, chat as worker_chat
 
 logger = logging.getLogger(__name__)
@@ -65,6 +68,24 @@ def _resolve_timeout_policy(pattern: Pattern, cmd: str, step: Step) -> str:
     return "recover" if decision == "recover" else "abort"
 
 
+def _mutation_user_message(mut_result: MutationResult) -> str:
+    """Engine-generic preamble that hands the diff to the worker (DEC-024).
+
+    The pattern's ``system_prompt`` already sets the cadrage ("you validate, you
+    don't re-mutate"). We only inject the diff body here so the engine stays
+    agnostic of what was mutated.
+    """
+    files = ", ".join(str(p) for p in mut_result.files_changed) or "(none recorded)"
+    diff_body = mut_result.diff.strip() or "(no textual diff)"
+    return (
+        "MUTATION APPLIED — the files below have been modified by deterministic "
+        "code BEFORE this conversation. Your task is to VALIDATE the result, not "
+        "to propose further mutations.\n\n"
+        f"Files changed: {files}\n\n"
+        f"DIFF:\n{diff_body}"
+    )
+
+
 async def _run_loop(
     pattern: Pattern,
     spec: BaseModel,
@@ -73,16 +94,24 @@ async def _run_loop(
     blacklist_patterns: list,
     commands_executed: list[dict],
     iterations_used: list[int],
+    mut_result: MutationResult | None = None,
 ) -> BaseModel:
     """Inner bounded loop. Mutates `commands_executed` / `iterations_used` in place.
 
     The list-wrapped `iterations_used` is so the outer wrapper can recover the
     counter on global timeout (the loop coroutine is cancelled mid-flight).
+
+    If ``mut_result`` is provided (a mutating pattern ran ``mutate`` pre-loop),
+    a generic user turn carrying the diff is appended before the loop starts so
+    the worker sees the new state without the pattern having to change
+    ``initial_user_message``'s signature (DEC-021).
     """
     messages: list[dict] = [
         {"role": "system", "content": pattern.system_prompt(spec)},
         {"role": "user", "content": pattern.initial_user_message(spec)},
     ]
+    if mut_result is not None:
+        messages.append({"role": "user", "content": _mutation_user_message(mut_result)})
     correction_used = False
     per_cmd_timeout = _per_command_timeout(settings.timeout_seconds)
 
@@ -267,6 +296,30 @@ async def dispatch(
     commands_executed: list[dict] = []
     iterations_used: list[int] = [0]
 
+    # DEC-024 pre-loop mutation phase. Consulted via getattr so non-mutating
+    # patterns (A/D) keep the previous code path untouched — extension, not
+    # refactor (DEC-021).
+    snap: Snapshot | None = None
+    mut_result: MutationResult | None = None
+    mutate_hook = getattr(pattern, "mutate", None)
+    if mutate_hook is not None:
+        snap = Snapshot(spec.workdir, getattr(spec, "allowed_read_paths", []))
+        try:
+            mut_result = mutate_hook(spec, snap)
+        except Exception as exc:  # noqa: BLE001 — any failure means atomic restore
+            logger.warning("dispatch: mutate raised %s — restoring snapshot", exc)
+            snap.restore()
+            snap = None
+            report = pattern.build_report(
+                final_payload=None,
+                commands_executed=[],
+                stop_reason="mutation_error",
+                iterations_used=0,
+                status="error",
+                notes=f"mutation error: {exc}",
+            )
+            return _maybe_enrich(pattern, report, exc)
+
     owns_client = client is None
     if client is None:
         client = httpx.AsyncClient(timeout=httpx.Timeout(60.0))
@@ -282,6 +335,7 @@ async def dispatch(
                     blacklist_patterns,
                     commands_executed,
                     iterations_used,
+                    mut_result=mut_result,
                 ),
                 timeout=settings.timeout_seconds,
             )
@@ -303,7 +357,35 @@ async def dispatch(
         if owns_client:
             await client.aclose()
 
-    return report
+    # DEC-024 atomicity: any error after mutation means the loop did not
+    # validate the mutated state — revert files to their pre-call bytes.
+    if snap is not None:
+        if report.status == "error":
+            logger.info("dispatch: report.status=error — restoring snapshot")
+            snap.restore()
+        else:
+            snap.cleanup()
+
+    return _maybe_enrich(pattern, report, mut_result)
+
+
+def _maybe_enrich(pattern: Pattern, report: BaseModel, outcome) -> BaseModel:
+    """Optional pattern hook: stamp mutation fields onto the typed report.
+
+    ``outcome`` is either a ``MutationResult`` (success), an ``Exception``
+    (mutate raised), or ``None`` (non-mutating pattern). Consulted via
+    ``getattr`` — A/D stay untouched (DEC-021 extension principle).
+    """
+    if outcome is None:
+        return report
+    hook = getattr(pattern, "enrich_report", None)
+    if hook is None:
+        return report
+    try:
+        return hook(report, outcome)
+    except Exception as exc:  # noqa: BLE001 — never let enrichment crash the dispatch
+        logger.error("dispatch: enrich_report raised %s — returning bare report", exc)
+        return report
 
 
 __all__ = ["dispatch", "PatternRejected"]

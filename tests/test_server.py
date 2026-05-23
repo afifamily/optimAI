@@ -160,6 +160,43 @@ async def test_execute_tool_flattens_spec_fields():
 
 
 # --------------------------------------------------------------------------
+# Phase 2 — Patch (B) + Create (C) appear automatically via the registry
+# --------------------------------------------------------------------------
+
+
+async def test_patch_and_create_tools_appear_with_no_server_changes():
+    """DEC-021 dividend: server.py is untouched but the new patterns show up."""
+    mcp = build_server()
+    async with Client(mcp) as client:
+        tools = await client.list_tools()
+    names = {t.name for t in tools}
+    assert "optimai_patch" in names
+    assert "optimai_create" in names
+
+
+async def test_patch_tool_flattens_spec_fields():
+    mcp = build_server()
+    async with Client(mcp) as client:
+        tools = await client.list_tools()
+    schema = {t.name: t for t in tools}["optimai_patch"].inputSchema
+    props = schema["properties"]
+    assert {"goal", "workdir", "edits"} <= set(props)
+    assert "edits" in schema["required"]
+    assert "spec" not in props
+
+
+async def test_create_tool_flattens_spec_fields():
+    mcp = build_server()
+    async with Client(mcp) as client:
+        tools = await client.list_tools()
+    schema = {t.name: t for t in tools}["optimai_create"].inputSchema
+    props = schema["properties"]
+    assert {"goal", "workdir", "files"} <= set(props)
+    assert "files" in schema["required"]
+    assert "spec" not in props
+
+
+# --------------------------------------------------------------------------
 # tool_description carried through
 # --------------------------------------------------------------------------
 

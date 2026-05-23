@@ -1,12 +1,19 @@
-"""Tests for the pattern schemas — Diagnose (A) and Execute (D)."""
+"""Tests for the pattern schemas — Diagnose (A), Execute (D), Patch (B), Create (C)."""
 
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from optimai.schemas.report import DiagnoseReport, ExecuteReport
-from optimai.schemas.task_spec import DiagnoseSpec, ExecuteSpec
+from optimai.schemas.report import CreateReport, DiagnoseReport, ExecuteReport, PatchReport
+from optimai.schemas.task_spec import (
+    CreateSpec,
+    DiagnoseSpec,
+    ExecuteSpec,
+    FileEdit,
+    NewFile,
+    PatchSpec,
+)
 
 
 def test_diagnose_spec_rejects_missing_workdir(tmp_path):
@@ -145,3 +152,96 @@ def test_diagnose_report_accepts_command_timeout_stop_reason():
     the Literal is shared so the type stays consistent across reports."""
     report = DiagnoseReport(status="error", stop_reason="command_timeout")
     assert report.stop_reason == "command_timeout"
+
+
+# --------------------------------------------------------------------------
+# Phase 2 — Patch (B) + Create (C) schemas (DEC-024)
+# --------------------------------------------------------------------------
+
+
+def test_patch_spec_requires_workdir(tmp_path):
+    missing = tmp_path / "nope"
+    with pytest.raises(ValidationError):
+        PatchSpec(
+            goal="patch a file",
+            workdir=missing,
+            edits=[FileEdit(path=tmp_path / "x.py", old="a", new="b")],
+        )
+
+
+def test_patch_spec_rejects_empty_edits(tmp_path):
+    with pytest.raises(ValidationError):
+        PatchSpec(goal="patch a file", workdir=tmp_path, edits=[])
+
+
+def test_file_edit_rejects_empty_old():
+    with pytest.raises(ValidationError):
+        FileEdit(path=Path("/tmp/x"), old="", new="b")
+
+
+def test_file_edit_allows_empty_new():
+    """Empty ``new`` is deletion — valid."""
+    e = FileEdit(path=Path("/tmp/x"), old="DELETE_ME\n", new="")
+    assert e.new == ""
+
+
+def test_patch_spec_optional_validation_command(tmp_path):
+    spec = PatchSpec(
+        goal="patch a file",
+        workdir=tmp_path,
+        edits=[FileEdit(path=tmp_path / "x.py", old="a", new="b")],
+    )
+    assert spec.validation_command is None
+
+
+def test_patch_report_mutation_error_round_trip():
+    report = PatchReport(
+        status="error",
+        stop_reason="mutation_error",
+        failed_edit="x.py: 'old' not found",
+        files_changed=[],
+        diff=None,
+        notes="mutation refused",
+    )
+    restored = PatchReport.model_validate_json(report.model_dump_json())
+    assert restored == report
+
+
+def test_create_spec_requires_workdir(tmp_path):
+    missing = tmp_path / "nope"
+    with pytest.raises(ValidationError):
+        CreateSpec(
+            goal="create a file",
+            workdir=missing,
+            files=[NewFile(path=tmp_path / "x.py", content="x", language="python")],
+        )
+
+
+def test_create_spec_rejects_empty_files(tmp_path):
+    with pytest.raises(ValidationError):
+        CreateSpec(goal="create", workdir=tmp_path, files=[])
+
+
+def test_new_file_default_language_is_none():
+    f = NewFile(path=Path("/tmp/x"), content="hi")
+    assert f.language == "none"
+
+
+def test_create_report_json_round_trip():
+    report = CreateReport(
+        status="complete",
+        summary="all files compile",
+        files_created=["/tmp/x.py"],
+        iterations_used=1,
+        stop_reason="converged",
+        notes="ok",
+    )
+    restored = CreateReport.model_validate_json(report.model_dump_json())
+    assert restored == report
+
+
+def test_patch_and_create_reports_accept_mutation_error_stop_reason():
+    p = PatchReport(status="error", stop_reason="mutation_error")
+    c = CreateReport(status="error", stop_reason="mutation_error")
+    assert p.stop_reason == "mutation_error"
+    assert c.stop_reason == "mutation_error"

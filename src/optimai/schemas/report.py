@@ -13,6 +13,7 @@ StopReason = Literal[
     "sandbox_violation",
     "worker_error",
     "shell_error",
+    "mutation_error",  # DEC-024: pre-loop mutation refused / failed → snapshot restored
 ]
 
 
@@ -54,6 +55,99 @@ class DiagnoseReport(BaseModel):
     commands_executed: list[dict] = Field(
         default_factory=list,
         description='Trace of every command: {"cmd", "exit", "stdout_truncated"}.',
+    )
+    notes: str = Field(
+        default="",
+        max_length=1024,
+        description="Free-form worker notes (<= 1 KB).",
+    )
+
+
+class PatchReport(BaseModel):
+    """Structured outcome of a Pattern B deterministic patch (DEC-006, DEC-024).
+
+    Compact like ExecuteReport: ``diff`` carries the applied edit (or ``None``
+    when the mutation failed pre-validation), ``failed_edit`` names the offender
+    on rollback (no-match / multi-match / validation error).
+    """
+
+    status: Literal["complete", "incomplete", "error"] = Field(
+        description="complete = patch applied AND validated; incomplete = limit "
+        "hit (DEC-007); error = mutation refused, validation failed, or guardrail tripped.",
+    )
+    summary: str | None = Field(
+        default=None,
+        max_length=1024,
+        description="One-line worker verdict (validation outcome, what broke if any).",
+    )
+    diff: str | None = Field(
+        default=None,
+        description="Unified diff of the applied edits (None when mutation was rejected).",
+    )
+    files_changed: list[str] = Field(
+        default_factory=list,
+        description="Paths that were patched. Empty on mutation_error.",
+    )
+    failed_edit: str | None = Field(
+        default=None,
+        description='Description of the offending edit, e.g. "<path>: old not found" / '
+        '"<path>: matched 3 times".',
+    )
+    iterations_used: int = Field(
+        default=0,
+        ge=0,
+        description="Number of loop iterations consumed by the validation phase.",
+    )
+    stop_reason: StopReason = Field(
+        description="Why the orchestration loop stopped.",
+    )
+    commands_executed: list[dict] = Field(
+        default_factory=list,
+        description='Trace of every validation command: {"cmd", "exit", "stdout_truncated"}.',
+    )
+    notes: str = Field(
+        default="",
+        max_length=1024,
+        description="Free-form worker notes (<= 1 KB).",
+    )
+
+
+class CreateReport(BaseModel):
+    """Structured outcome of a Pattern C deterministic creation (DEC-006, DEC-024).
+
+    Mirrors PatchReport but speaks the create vocabulary: ``files_created`` lists
+    what was written, ``failed_file`` names a refused/invalid one on rollback.
+    """
+
+    status: Literal["complete", "incomplete", "error"] = Field(
+        description="complete = files created AND syntax-validated; incomplete = limit "
+        "hit; error = path collision, validation failed, or guardrail tripped.",
+    )
+    summary: str | None = Field(
+        default=None,
+        max_length=1024,
+        description="One-line worker verdict.",
+    )
+    files_created: list[str] = Field(
+        default_factory=list,
+        description="Paths actually written. Empty on mutation_error.",
+    )
+    failed_file: str | None = Field(
+        default=None,
+        description='Description of the offender, e.g. "<path>: already exists" / '
+        '"<path>: syntax check failed".',
+    )
+    iterations_used: int = Field(
+        default=0,
+        ge=0,
+        description="Number of loop iterations consumed.",
+    )
+    stop_reason: StopReason = Field(
+        description="Why the orchestration loop stopped.",
+    )
+    commands_executed: list[dict] = Field(
+        default_factory=list,
+        description='Trace of every validation command: {"cmd", "exit", "stdout_truncated"}.',
     )
     notes: str = Field(
         default="",

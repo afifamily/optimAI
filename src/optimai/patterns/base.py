@@ -8,15 +8,38 @@ consumes `Step` values produced by `Pattern.parse` and hands the trace back to
 
 Adding a new pattern = new file under `patterns/` + `@register("name")`. The
 Dispatcher and the future MCP server iterate the registry; no central list.
+
+Phase 2 (DEC-024) adds an OPTIONAL pre-loop mutation phase for patterns that
+write to disk (B/C). The contract stays backward-compatible: patterns that
+don't declare ``mutate()`` behave exactly like A/D — the dispatcher checks the
+hook via ``getattr`` (same mechanism as ``on_command_timeout`` from DEC-022)
+and leaves untouched patterns alone. Mirror hook ``enrich_report`` lets
+mutating patterns attach diff/files-changed/failed-target fields after
+``build_report`` without changing its signature.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
 StepKind = Literal["command", "final", "invalid"]
 TimeoutPolicy = Literal["recover", "abort"]
+
+
+@dataclass(frozen=True)
+class MutationResult:
+    """Outcome of a successful deterministic mutation (DEC-024).
+
+    Mutating patterns return this from their optional ``mutate`` hook so the
+    engine can surface the diff to the worker (as a user message) and the
+    pattern's ``enrich_report`` hook can stamp ``files_changed`` / ``diff`` onto
+    the typed report. Frozen — passed read-only across the dispatcher.
+    """
+
+    files_changed: list[Path] = field(default_factory=list)
+    diff: str = ""  # unified diff (difflib), kept compact for the worker turn
 
 
 @dataclass(frozen=True)
