@@ -159,16 +159,27 @@ en local avec un rapport compressé qui retourne au Cortex.
 ## Phase 2 — Patterns B & C
 
 **Objectif** : Étendre aux modifications de fichiers (Patch) et créations
-(Create), avec garde-fous renforcés.
+(Create), avec garde-fous renforcés. **Périmètre de réversibilité fixé par
+[DEC-024](decisions/DEC-024-reversibility-scope.md)** : atomicité intra-appel
+seulement (la réversibilité de lot inter-appels est reportée post-Phase 3 —
+voir Phase 4).
 
 ### Étapes prévues
 
-- Pattern B (Patch) : instructions ciblées de modification
-  (ligne, recherche, remplacement) avec diff preview et rollback
-- Pattern C (Create) : création de fichiers depuis une spec, avec
-  validation syntaxique (Swift, Python, Go selon le projet)
-- Snapshots automatiques avant modification (git stash ou copie
-  temporaire)
+- Pattern B (Patch) : édits ciblés recherche-remplacement (`old`/`new` par
+  fichier) fournis par le Cortex, appliqués de façon **déterministe**
+  (DEC-024), avec **diff preview** (`difflib`, remonté dans le report) et
+  **atomicité intra-appel** (restauration de l'état d'avant l'appel sur échec)
+- Pattern C (Create) : création de fichiers depuis une spec (chemin + contenu
+  fournis par le Cortex), avec **validation syntaxique** via shell (Swift /
+  Python / Go selon le projet) et même atomicité intra-appel
+- **Atomicité intra-appel** via un helper de snapshot partagé : copie
+  temporaire éphémère des fichiers touchés (DEC-024 — **pas** `git stash`,
+  optimAI reste sans autorité git), restaurée sur échec, nettoyée sur succès
+- Acte mutant **déterministe et Cortex-sourced** ; le worker pilote la
+  validation et le verdict, pas la mutation (DEC-024)
+- Premier test du contrat `Pattern` (DEC-021) sur une **phase de mutation**
+  nouvelle (extension rétrocompatible attendue, pas de refonte du moteur)
 - Tests d'intégration sur les patterns combinés (A+B, D+C)
 
 ---
@@ -196,6 +207,15 @@ passées des autres projets.
 
 ### Étapes prévues
 
+- **Réversibilité de lot inter-appels — autorité git locale (post-Phase 3,
+  reportée par [DEC-024](decisions/DEC-024-reversibility-scope.md))** : outils
+  `optimai_checkpoint` / `optimai_checkpoint_resolve`, branche temporaire
+  `optimai/*` portant l'état du lot (statelessness préservée — l'état vit
+  dans git, pas en mémoire), diff de lot via `git diff`, garde-fous (working
+  tree propre, namespace `optimai/*`, **jamais de push**, `discard` autonome /
+  `merge` gated). Reconnue inévitable, à concevoir **après** l'enrichissement
+  Phase 3 pour couvrir un maximum de situations. Esquisse conservée dans
+  DEC-024 ; fera l'objet d'une DEC dédiée.
 - Métriques tokens économisés (comparaison "avec optimAI" vs "sans")
 - Logs structurés des sessions (JSON, queryables)
 - Fallback Cortex si worker échoue 2 fois de suite

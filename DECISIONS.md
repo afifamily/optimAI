@@ -39,6 +39,7 @@ Pour ajouter une nouvelle décision, voir `decisions/README.md`.
 | [DEC-021](decisions/DEC-021-dispatcher-engine-pattern-registry.md) | Architecture Dispatcher — moteur unique + registre de patterns (Strategy) | ✅ | 2026-05-20 |
 | [DEC-022](decisions/DEC-022-per-command-timeout-policy.md) | Politique de timeout par-commande — par-pattern (Diagnose recover / Execute abort) | ✅ | 2026-05-20 |
 | [DEC-023](decisions/DEC-023-claude-cli-user-scope.md) | Intégration Claude CLI — scope `user` (`~/.claude.json`) | ✅ | 2026-05-21 |
+| [DEC-024](decisions/DEC-024-reversibility-scope.md) | Périmètre réversibilité — atomicité intra-appel (Phase 2), lot reporté | ✅ | 2026-05-23 |
 
 ## Décisions à venir
 
@@ -386,3 +387,91 @@ Session longue, en deux temps, séparée par Desktop #5.
   (ROADMAP étape 8).
 - Phase 1 : étapes 5 + 7 ✅ (schemas A & D complets ; Pattern D livré).
   Reste étapes 8-11 (serveur MCP, intégrations Desktop/CLI, doc).
+
+### Session Desktop #12 (2026-05-23)
+
+- Reprise Phase 2 (lecture DECISIONS + HANDOVER #11 + ROADMAP). Phase 1
+  confirmée close (commit `3f8976e`). Les notes de session #10 et #11 ne sont
+  pas détaillées ici — elles sont tracées dans `ROADMAP.md` (étapes 9-11) et
+  les HANDOVERs `.drafts/claude/CLI/`.
+- **DEC-024 rédigée et actée** (✅ Accepted) : périmètre de réversibilité
+  Phase 2. Distinction des deux portées de rollback — **atomicité intra-appel**
+  (transactionnelle, dans le pattern) vs **réversibilité de lot inter-appels**
+  (point de restauration sur plusieurs appels), la seconde bloquée par la
+  statelessness MCP. Phase 2 = atomicité intra-appel seulement (helper snapshot
+  dans le pattern, copie temp éphémère, **pas de git**) ; réversibilité de lot
+  (autorité git locale, outils `checkpoint`/`resolve`) reconnue **inévitable**
+  mais **reportée post-Phase 3** (balance gains/coûts, maturité, dette de compat
+  antérieure — verdict Hassan). Corollaire de sûreté acté : l'acte mutant de
+  B/C est **déterministe et Cortex-sourced** (édits/contenu fournis dans le
+  spec, appliqués par code ; worker = validation + verdict, pas mutation —
+  distinct de l'option (2) scriptée écartée pour Execute). Esquisse de la
+  portée (2) conservée dans la DEC.
+- `ROADMAP.md` mis à jour : Phase 2 précisée (atomicité intra-appel, DEC-024,
+  application déterministe, diff `difflib`) ; réversibilité de lot ajoutée
+  comme future feature post-Phase 3 (tête de Phase 4).
+- Rédaction `CLI_PROMPT_007_patch_create_patterns.md` (brief B+C groupés, sous
+  DEC-024 + test DEC-021 sur l'extension du contrat `Pattern` pour la nouvelle
+  phase de mutation déterministe). Séquencé B d'abord (banc d'essai du helper
+  d'atomicité + extension de contrat), C ensuite ; point d'arrêt naturel après
+  B si l'extension dérape (verdict DEC-021 à remonter avant de coder C).
+- **CLI #7 livré en une passe** (commit local `fb6d2b5`) : Patterns B & C,
+  helper d'atomicité `snapshot.py`, hooks `mutate`/`enrich_report` via `getattr`
+  (verdict DEC-021 : ✅ extension rétrocompatible, aucune signature touchée,
+  boucle non refondue), 210 tests verts, 4 gardes architecturales OK,
+  `optimai_patch`/`optimai_create` exposés sans toucher `server.py`.
+- **Incident déploiement MCP (résolu)** : `optimai_patch` semblait absent côté
+  Desktop. Cause racine = **plusieurs instances du serveur MCP en collision sur
+  stdio** (lancements manuels en parallèle du spawn Desktop) → crash-loop
+  `transport closed`, liste d'outils instable. Hypothèses écartées par lecture
+  (install périmé, `.pyc`) grâce aux commandes de confirmation avant tout
+  correctif. Règle : **un seul lanceur du serveur MCP = Desktop** ; le serveur
+  MCP est en **stdio** (n'utilise pas le port 1337, qui est celui de
+  `mlx_lm.server`). Accès `~/Library/Logs/Claude` + `/private/tmp` ajoutés au
+  Filesystem MCP.
+- **Smoke live B/C** (`/private/tmp/optimai-live-bc`, piloté par Desktop via
+  MCP, worker réel Qwen) : C-succès ✅, B-succès ✅ (worker bien en rôle
+  validateur, ne re-mute pas — pari sémantique DEC-024 confirmé sur vrai
+  worker). **B-rollback ❌ → bug structurel trouvé** : validation KO (`exit:1`)
+  mais `status="complete"` → pas de rollback → fichier laissé cassé sur disque.
+- **DEC-024 amendée** (verdict Hassan) : sémantique du statut d'échec « ceinture
+  + bretelles » — socle **déterministe** (moteur force `error` si la commande de
+  **validation désignée** sort exit≠0, non contournable) **+** couche **worker**
+  additive (déclarer un échec sémantique sur exit 0 + sortie suspecte). Invariant :
+  le déterministe prime, le worker ne peut jamais transformer un exit≠0 de
+  validation en succès. Impose de lever le `status="complete"` codé en dur de
+  `_run_loop`, en restant rétrocompatible A/D (DEC-021). CLI invité à proposer
+  une meilleure alternative si l'invariant tient.
+- Rédaction `CLI_PROMPT_008_failure_status_fix.md` (correctif + test live
+  reproduisant B-rollback). Fichier cassé `hello.py` **conservé** comme cas de
+  reproduction. Smoke live restant (C-swift-skip, dégradation propre `swiftc`
+  absent) **en attente** après le correctif.
+- **CLI #8 livré** (commit `9b7dffd`) : cascade à 2 couches via hooks optionnels
+  `is_validation_command` (Layer 1 déterministe) + `worker_declares_failure`
+  (Layer 2 additif), Protocol inchangé, A/D inertes, 227 tests. **B-rollback
+  re-testé en live après fix : ✅** `status=error` + fichier restauré à l'octet
+  (critère de clôture du bug atteint).
+- **Smoke C-swift** : `swiftc` **présent** sur la machine → validation Swift
+  réelle réussie (bonus : `swiftc -parse` prouvé en live, utile pour TBS). Le
+  chemin de *dégradation* (outil absent) n'a donc pas été exercé.
+- **Collision trouvée par lecture de `create.py`** (raisonnée, non observée) :
+  le Layer 1 déterministe de #8 **rollback un fichier valide si l'outil de
+  validation est absent** (`swiftc -parse` → exit 127 → traité comme échec de
+  validation). Non déterministe (dépend que le worker fasse `which` d'abord ou
+  non). La dégradation propre reposait seulement sur une consigne du
+  `system_prompt`, neutralisée par #8 qui a retiré au worker l'autorité sur le
+  statut.
+- **DEC-024 précisée** (verdict Hassan) : invariant ajouté — *un outil de
+  validation absent n'est pas un échec de validation* ; un « command not found »
+  (exit 127) ne doit jamais rollback un fichier valide → dégradation propre
+  (skip + note), **décidée de façon déterministe côté code**, pas par le worker.
+  Comment laissé à CLI (préférence Desktop : vérifier l'outil avant via
+  `shutil.which` → `validation_command_for` renvoie `None` → pas de Layer 1).
+- Rédaction `CLI_PROMPT_009_validation_tool_absent.md` (résout la collision +
+  tests mockés déterministes du cas outil-absent — le trou de couverture).
+
+**Fin de session #12 — à committer par Hassan (DEC-009) :** commit CLI `9b7dffd`
+(non poussé) ; artefacts Desktop non versionnés (`DECISIONS.md`, `ROADMAP.md`,
+`decisions/DEC-024-*` amendé/précisé, briefs CLI #7/#8/#9, README CLI). CLI #9
+en attente d'exécution. Smoke C-swift-skip (dégradation) → déplacé en test mocké
+sous CLI #9 (le live ne peut pas le rendre déterministe).
