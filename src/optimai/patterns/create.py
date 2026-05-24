@@ -8,14 +8,19 @@ mécaniquement sous snapshot, puis le worker pilote la validation syntaxique
 Refus explicite si un ``path`` existe déjà : Create ne fait pas d'écrasement
 (DEC-008 §4 — échec explicite, pas de silent overwrite).
 
-Dégradation propre des validateurs : un outil absent (ex. ``swiftc`` non
-installé) n'invalide pas la création — le worker rapporte « validation sautée :
-outil absent », pas un faux négatif (DEC-024 §validation).
+Dégradation propre des validateurs (DEC-024 précisée, 2026-05-24, piste B) :
+``validation_command_for`` retourne ``None`` quand l'outil requis n'est pas sur
+le PATH — exactement comme ``language="none"``. Aucune commande de validation
+n'est produite → Layer 1 ne peut pas tirer → pas de rollback d'un fichier
+valide à cause d'un outil absent. La décision est déterministe (code), pas
+confiée au jugement du worker. Le skip est remonté dans le report ``notes``
+via ``MutationResult.skipped_validations``.
 
 DEC-022 : Create mute → politique timeout per-cmd = ``abort``.
 """
 
 import shlex
+import shutil
 from pathlib import Path
 from typing import Literal
 
@@ -34,9 +39,9 @@ Scope — read carefully:
   written verbatim from the operator specification.
 - For each file, a language-aware syntax check command is provided. RUN each
   validation command, observe its result, then report a single verdict.
-- If a validation tool is unavailable (exit code likely 127 or "command not
-  found"), say so in the SUMMARY but do NOT mark the file as failed — that is
-  graceful degradation, not a regression.
+- If a file's validation entry reads "(skipped — <tool> not on PATH)" or
+  "(no check)", do NOT invent a substitute: simply note the skip in the
+  SUMMARY and treat the file as accepted.
 - You MAY run ONE short read-only diagnostic command (`which <tool>`,
   `cat <file>`) to clarify a result. No mutations of any kind.
 
@@ -93,12 +98,18 @@ _TOOL_NAMES: dict[ValidationLanguage, str] = {
 def validation_command_for(language: ValidationLanguage, path: Path) -> str | None:
     """Return the validation shell command for ``language`` / ``path``, or None.
 
-    ``None`` means "no validation" (``language="none"``). The tool-presence
-    check is delegated to the worker (the system prompt explains how to read a
-    "command not found" result) — the engine stays generic.
+    ``None`` means "no validation will run" and covers two cases:
+      - ``language="none"`` — the operator opted out of any syntax check;
+      - the tool required by ``language`` (``swiftc``, ``gofmt``, ...) is not on
+        PATH — DEC-024 piste B: graceful degradation is decided
+        deterministically here, never reaches the worker as a runnable
+        command, so Layer 1 cannot fire on a missing-tool exit 127.
     """
     template = _VALIDATION_COMMANDS.get(language, "")
     if not template:
+        return None
+    tool = _TOOL_NAMES.get(language, "")
+    if tool and shutil.which(tool) is None:
         return None
     return template.format(path=shlex.quote(str(path)))
 
@@ -142,6 +153,30 @@ def _indent_for_diff(content: str) -> str:
     return "\n".join(f"+{line}" for line in content.splitlines()) or "+(empty file)"
 
 
+def _append_skip_notes(existing: str, skipped: list[str]) -> str:
+    """Concatenate skip notes to the report ``notes`` field (1024-char clamp)."""
+    line = "Skipped validations: " + "; ".join(skipped)
+    merged = f"{existing}\n{line}" if existing else line
+    return merged[:1024]
+
+
+def _skipped_validations(spec: CreateSpec) -> list[str]:
+    """List of deterministic skip notes for files whose validation tool is absent.
+
+    Mirrors the gate enforced by ``validation_command_for`` so the report can
+    explain WHY a file got no syntax check — keeps the degradation visible to
+    the Cortex (DEC-024 precision, 2026-05-24).
+    """
+    notes: list[str] = []
+    for item in spec.files:
+        tool = _TOOL_NAMES.get(item.language, "")
+        if not tool or shutil.which(tool) is not None:
+            continue
+        resolved = _resolve_file_path(item, spec.workdir)
+        notes.append(f"{resolved}: {tool} not on PATH (validation skipped)")
+    return notes
+
+
 @register("create")
 class CreatePattern:
     """Strategy C — deterministic create + worker-driven syntax check."""
@@ -159,7 +194,10 @@ class CreatePattern:
 
     def mutate(self, spec: CreateSpec, snap: Snapshot) -> MutationResult:
         files_changed, diff = _apply_creates(spec.files, spec.workdir, snap)
-        return MutationResult(files_changed=files_changed, diff=diff)
+        skipped = _skipped_validations(spec)
+        return MutationResult(
+            files_changed=files_changed, diff=diff, skipped_validations=skipped
+        )
 
     # ---- loop phase --------------------------------------------------------------
 
@@ -174,7 +212,16 @@ class CreatePattern:
             resolved = _resolve_file_path(f, spec.workdir)
             cmd = validation_command_for(f.language, resolved)
             label = f.language if f.language != "none" else "(none)"
-            lines.append(f"- {resolved} [{label}]: {cmd or '(no check)'}")
+            if cmd is not None:
+                lines.append(f"- {resolved} [{label}]: {cmd}")
+                continue
+            tool = _TOOL_NAMES.get(f.language, "")
+            if tool:
+                lines.append(
+                    f"- {resolved} [{label}]: (skipped — {tool} not on PATH)"
+                )
+            else:
+                lines.append(f"- {resolved} [{label}]: (no check)")
         return "\n".join(lines)
 
     def operator_text(self, spec: CreateSpec) -> str:
@@ -249,11 +296,10 @@ class CreatePattern:
 
     def enrich_report(self, report: CreateReport, outcome: object) -> CreateReport:
         if isinstance(outcome, MutationResult):
-            return report.model_copy(
-                update={
-                    "files_created": [str(p) for p in outcome.files_changed],
-                }
-            )
+            update: dict = {"files_created": [str(p) for p in outcome.files_changed]}
+            if outcome.skipped_validations:
+                update["notes"] = _append_skip_notes(report.notes, outcome.skipped_validations)
+            return report.model_copy(update=update)
         update = {"failed_file": report.failed_file or str(outcome)}
         return report.model_copy(update=update)
 

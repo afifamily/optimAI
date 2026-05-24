@@ -606,3 +606,111 @@ async def test_legacy_pattern_without_hooks_keeps_complete(tmp_path):
         report = await dispatch("diagnose", spec, settings=_settings(), client=client)
     assert report.status == "complete"
     assert report.stop_reason == "converged"
+
+
+# --------------------------------------------------------------------------
+# DEC-024 piste B — end-to-end: absent validation tool degrades cleanly
+# --------------------------------------------------------------------------
+
+
+def _create_report_block(summary: str = "files written", failed_file: str = "none") -> str:
+    return (
+        "THINK: validated\n"
+        "ACTION: report\n"
+        f"SUMMARY: {summary}\n"
+        f"FAILED_FILE: {failed_file}\n"
+    )
+
+
+async def test_absent_validation_tool_does_not_trigger_rollback(tmp_path, monkeypatch):
+    """End-to-end: Create with a missing toolchain (mocked shutil.which→None)
+    must finish 'complete', the file must survive, and the report must mention
+    the skip — exactly the bug from DEC-024 §Précision."""
+    from optimai.schemas.task_spec import CreateSpec, NewFile
+
+    monkeypatch.setattr("optimai.patterns.create.shutil.which", lambda name: None)
+
+    target = tmp_path / "Foo.swift"
+    spec = CreateSpec(
+        goal="create a swift source on a machine without swiftc",
+        workdir=tmp_path,
+        files=[NewFile(path=target, content="struct Foo {}\n", language="swift")],
+    )
+
+    async with _scripted_worker([_create_report_block("file written; validation skipped")]) as client:
+        report = await dispatch("create", spec, settings=_settings(), client=client)
+
+    assert report.status == "complete"
+    assert target.exists()
+    assert target.read_text(encoding="utf-8") == "struct Foo {}\n"
+    assert "Skipped validations" in report.notes
+    assert "swiftc" in report.notes
+
+
+async def test_present_tool_with_invalid_file_still_rolls_back(tmp_path, monkeypatch):
+    """Invariant #8 / DEC-024 amendment must not regress: when the tool IS
+    present and the validation cmd really exits non-zero, Layer 1 fires →
+    status=error → snapshot restores the file."""
+    from optimai.schemas.task_spec import CreateSpec, NewFile
+
+    # Force shutil.which to claim swiftc is present so validation_command_for
+    # returns a real command. The worker's mocked transcript will then 'run'
+    # it via a scripted shell turn.
+    monkeypatch.setattr("optimai.patterns.create.shutil.which", lambda name: "/usr/bin/" + name)
+
+    target = tmp_path / "Bar.swift"
+    spec = CreateSpec(
+        goal="create a swift source that won't compile, tool present",
+        workdir=tmp_path,
+        files=[NewFile(path=target, content="garbage // not real swift\n", language="swift")],
+    )
+
+    # Worker runs the canonical 'swiftc -parse <path>' (we replay it via 'false'
+    # in the test shell to get a real exit≠0 — Layer 1 needs the EXACT cmd
+    # string matched by is_validation_command, so we use the same canonical
+    # form the engine would expose).
+    from optimai.patterns.create import validation_command_for
+    val_cmd = validation_command_for("swift", target.resolve())
+    assert val_cmd is not None  # mock made it visible
+
+    # The shell will actually run `swiftc -parse …` — but swiftc may not be
+    # installed on this machine. So we fake the worker by submitting a CMD
+    # the shell can execute and which returns non-zero. We use `bash -c
+    # "exit 1"` and tell the engine that THAT is the validation by wrapping
+    # is_validation_command. Simpler: register an ad-hoc create-like pattern.
+    #
+    # The cleanest route: trust the real CreatePattern but stub the shell
+    # exit via monkeypatching shell.run to fake the swiftc call.
+    from optimai import shell as shell_mod
+    real_run = shell_mod.run
+
+    async def fake_run(cmd, *args, **kwargs):
+        # Pretend swiftc parsed and failed.
+        if cmd.strip() == val_cmd.strip():
+            from optimai.shell import CommandResult
+            return CommandResult(
+                cmd=cmd,
+                exit_code=1,
+                stdout="error: garbage",
+                stderr="",
+                stdout_truncated=False,
+                stderr_truncated=False,
+                duration_seconds=0.0,
+            )
+        return await real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr("optimai.dispatcher.shell_run", fake_run)
+
+    responses = [
+        f"THINK: validate\nACTION: shell\nCMD: {val_cmd}\n",
+        _create_report_block("would say all good but the file is broken", "Bar.swift: parse error"),
+    ]
+    async with _scripted_worker(responses) as client:
+        report = await dispatch("create", spec, settings=_settings(), client=client)
+
+    assert report.status == "error", (
+        f"Layer 1 must still fire when tool is present and validation fails — got status={report.status}"
+    )
+    # Atomicity: file restored (i.e., does not exist anymore — it was created
+    # by mutate, then the snapshot deleted it on rollback).
+    assert not target.exists()

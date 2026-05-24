@@ -8,10 +8,20 @@ Atomicité intra-appel : chaque édit doit matcher ``old`` exactement une fois.
 No-match / multi-match / validation KO → la snapshot remet les fichiers à
 l'identique avant le retour (DEC-024 §atomicité).
 
+Dégradation propre des validateurs (DEC-024 précisée, 2026-05-24, piste B) :
+si le binaire désigné par ``spec.validation_command`` n'est pas sur le PATH,
+le pattern le détecte au pré-vol (``shutil.which`` sur le premier token), masque
+la commande dans le user message, et l'exclut de ``is_validation_command``.
+Conséquence : Layer 1 ne peut pas tirer sur un exit 127 d'un outil absent, donc
+pas de rollback d'un patch par ailleurs valide. Le skip est remonté dans le
+report ``notes`` via ``MutationResult.skipped_validations``.
+
 DEC-022 : le pattern mute → politique timeout per-cmd = ``abort``.
 """
 
 import difflib
+import shlex
+import shutil
 from collections import OrderedDict
 from pathlib import Path
 from typing import Literal
@@ -69,6 +79,38 @@ Rules:
 def _none_if_blank(value: str) -> str | None:
     cleaned = value.strip()
     return None if cleaned == "" or cleaned.lower() == "none" else cleaned
+
+
+def _validation_tool(cmd: str | None) -> str | None:
+    """Best-effort extraction of the binary name from ``cmd`` (or None).
+
+    Returns ``None`` when we cannot confidently identify a tool to probe:
+    empty/unparsable command, env-var prefix like ``VAR=val pytest …``. In
+    those cases the caller MUST NOT degrade — leaving Layer 1 active is the
+    safer default (we'd rather risk a false rollback signal than skip a
+    validation we should have run).
+    """
+    if not cmd:
+        return None
+    try:
+        parts = shlex.split(cmd)
+    except ValueError:
+        return None
+    if not parts:
+        return None
+    head = parts[0]
+    if "=" in head:
+        # env-var assignment: real tool would be parts[1], but we don't probe
+        # nested shells either — return None so degradation stays off.
+        return None
+    return head
+
+
+def _append_skip_notes(existing: str, skipped: list[str]) -> str:
+    """Concatenate skip notes to the report ``notes`` field (1024-char clamp)."""
+    line = "Skipped validations: " + "; ".join(skipped)
+    merged = f"{existing}\n{line}" if existing else line
+    return merged[:1024]
 
 
 def _resolve_edit_path(edit: FileEdit, workdir: Path) -> Path:
@@ -145,7 +187,13 @@ class PatchPattern:
 
     def mutate(self, spec: PatchSpec, snap: Snapshot) -> MutationResult:
         files_changed, diff = _apply_edits(spec.edits, spec.workdir, snap)
-        return MutationResult(files_changed=files_changed, diff=diff)
+        skipped: list[str] = []
+        tool = _validation_tool(spec.validation_command)
+        if tool and shutil.which(tool) is None:
+            skipped.append(f"{tool}: not on PATH (validation skipped)")
+        return MutationResult(
+            files_changed=files_changed, diff=diff, skipped_validations=skipped
+        )
 
     # ---- loop phase --------------------------------------------------------------
 
@@ -153,7 +201,16 @@ class PatchPattern:
         return SYSTEM_PROMPT
 
     def initial_user_message(self, spec: PatchSpec) -> str:
-        validation = spec.validation_command or "(none — report based on the diff alone)"
+        if spec.validation_command:
+            tool = _validation_tool(spec.validation_command)
+            if tool and shutil.which(tool) is None:
+                validation = (
+                    f"(skipped — {tool} not on PATH; report based on the diff alone)"
+                )
+            else:
+                validation = spec.validation_command
+        else:
+            validation = "(none — report based on the diff alone)"
         return (
             f"GOAL:\n{spec.goal}\n\n"
             f"CONTEXT:\n{spec.context}\n\n"
@@ -246,12 +303,13 @@ class PatchPattern:
         build_report so this pattern keeps its standard 6-kwarg signature.
         """
         if isinstance(outcome, MutationResult):
-            return report.model_copy(
-                update={
-                    "diff": outcome.diff or None,
-                    "files_changed": [str(p) for p in outcome.files_changed],
-                }
-            )
+            update: dict = {
+                "diff": outcome.diff or None,
+                "files_changed": [str(p) for p in outcome.files_changed],
+            }
+            if outcome.skipped_validations:
+                update["notes"] = _append_skip_notes(report.notes, outcome.skipped_validations)
+            return report.model_copy(update=update)
         # outcome is the exception from mutate — populate failed_edit only if
         # build_report didn't already set it (worker may have named it).
         update = {"failed_edit": report.failed_edit or str(outcome)}
@@ -272,10 +330,21 @@ class PatchPattern:
         Whitespace-normalised exact match. Diagnostic read-only commands the
         worker may interleave (`cat`, `head`, `which`...) are intentionally
         NOT validation — a `grep` that finds nothing must not trigger rollback.
+
+        DEC-024 piste B: when the validation binary is absent from PATH, we
+        deliberately return False even on an exact-string match — Layer 1 must
+        not turn a missing-tool exit 127 into a rollback (the user message
+        already hides the command, so the worker should not run it; this is
+        defense in depth in case it does anyway).
         """
         if not spec.validation_command:
             return False
-        return cmd.strip() == spec.validation_command.strip()
+        if cmd.strip() != spec.validation_command.strip():
+            return False
+        tool = _validation_tool(spec.validation_command)
+        if tool and shutil.which(tool) is None:
+            return False
+        return True
 
     def worker_declares_failure(self, payload: dict) -> bool:
         """Layer 2 — a named FAILED_EDIT in the worker's report counts as failure.

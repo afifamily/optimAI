@@ -324,3 +324,176 @@ def test_build_report_preserves_worker_verdict_on_error_status(pattern):
     assert report.status == "error"
     assert report.summary == "py_compile failed at line 3"
     assert report.failed_edit == "hello.py: syntax break"
+
+
+# --------------------------------------------------------------------------
+# DEC-024 piste B — absent validation tool: skipped deterministically
+# --------------------------------------------------------------------------
+
+
+def test_is_validation_command_false_when_tool_absent(pattern, workdir, target, monkeypatch):
+    """Layer 1 must NOT fire on the canonical validation command when the
+    tool itself is missing from PATH — even on an exact-string match (defense
+    in depth, in case the worker runs it despite the user-message skip)."""
+    monkeypatch.setattr("optimai.patterns.patch.shutil.which", lambda name: None)
+    spec = PatchSpec(
+        goal="rename hello",
+        workdir=workdir,
+        edits=[FileEdit(path=target, old="hello", new="world")],
+        validation_command="pytest tests/",
+    )
+    assert pattern.is_validation_command("pytest tests/", spec) is False
+
+
+def test_is_validation_command_true_when_tool_on_path(pattern, workdir, target, monkeypatch):
+    monkeypatch.setattr("optimai.patterns.patch.shutil.which", lambda name: "/usr/bin/" + name)
+    spec = PatchSpec(
+        goal="rename hello",
+        workdir=workdir,
+        edits=[FileEdit(path=target, old="hello", new="world")],
+        validation_command="pytest tests/",
+    )
+    assert pattern.is_validation_command("pytest tests/", spec) is True
+
+
+def test_initial_user_message_marks_skipped_when_tool_absent(pattern, workdir, target, monkeypatch):
+    monkeypatch.setattr("optimai.patterns.patch.shutil.which", lambda name: None)
+    spec = PatchSpec(
+        goal="rename hello",
+        workdir=workdir,
+        edits=[FileEdit(path=target, old="hello", new="world")],
+        validation_command="pytest tests/",
+    )
+    msg = pattern.initial_user_message(spec)
+    assert "(skipped — pytest not on PATH" in msg
+    assert "pytest tests/" not in msg
+
+
+def test_initial_user_message_keeps_validation_when_tool_present(pattern, workdir, target, monkeypatch):
+    monkeypatch.setattr("optimai.patterns.patch.shutil.which", lambda name: "/usr/bin/" + name)
+    spec = PatchSpec(
+        goal="rename hello",
+        workdir=workdir,
+        edits=[FileEdit(path=target, old="hello", new="world")],
+        validation_command="pytest tests/",
+    )
+    msg = pattern.initial_user_message(spec)
+    assert "VALIDATION COMMAND:\npytest tests/" in msg
+
+
+def test_mutate_records_skip_when_tool_absent(pattern, workdir, target, monkeypatch):
+    monkeypatch.setattr("optimai.patterns.patch.shutil.which", lambda name: None)
+    spec = PatchSpec(
+        goal="rename hello",
+        workdir=workdir,
+        edits=[FileEdit(path=target, old="hello", new="world")],
+        validation_command="pytest tests/",
+    )
+    snap = Snapshot(workdir)
+    try:
+        result = pattern.mutate(spec, snap)
+        # File mutated normally — the missing tool only affects validation.
+        assert target.read_text(encoding="utf-8") == "print('world')\n"
+        assert any("pytest" in note and "not on PATH" in note for note in result.skipped_validations)
+    finally:
+        snap.cleanup()
+
+
+def test_mutate_no_skip_when_validation_command_absent(pattern, workdir, target):
+    """When there is no validation_command, we don't probe — and there's
+    nothing to skip either."""
+    spec = PatchSpec(
+        goal="rename hello",
+        workdir=workdir,
+        edits=[FileEdit(path=target, old="hello", new="world")],
+        validation_command=None,
+    )
+    snap = Snapshot(workdir)
+    try:
+        result = pattern.mutate(spec, snap)
+        assert result.skipped_validations == []
+    finally:
+        snap.cleanup()
+
+
+def test_mutate_no_skip_when_tool_present(pattern, workdir, target, monkeypatch):
+    monkeypatch.setattr("optimai.patterns.patch.shutil.which", lambda name: "/usr/bin/" + name)
+    spec = PatchSpec(
+        goal="rename hello",
+        workdir=workdir,
+        edits=[FileEdit(path=target, old="hello", new="world")],
+        validation_command="pytest tests/",
+    )
+    snap = Snapshot(workdir)
+    try:
+        result = pattern.mutate(spec, snap)
+        assert result.skipped_validations == []
+    finally:
+        snap.cleanup()
+
+
+def test_enrich_report_surfaces_skip_notes(pattern, workdir, target):
+    report = pattern.build_report(
+        final_payload={"summary": "patched", "failed_edit": None},
+        commands_executed=[],
+        stop_reason="converged",
+        iterations_used=1,
+        status="complete",
+        notes="worker note",
+    )
+    enriched = pattern.enrich_report(
+        report,
+        MutationResult(
+            files_changed=[target],
+            diff="DIFF",
+            skipped_validations=["pytest: not on PATH (validation skipped)"],
+        ),
+    )
+    assert "worker note" in enriched.notes
+    assert "Skipped validations:" in enriched.notes
+    assert "pytest" in enriched.notes
+
+
+def test_invariant_layer1_still_fires_when_tool_present(pattern, workdir, target, monkeypatch):
+    """Invariant #8 (CLI #8 / amendment): when the tool IS present and the
+    validation cmd really exits non-zero (real failure), Layer 1 must still
+    flag it as a validation command — we did not weaken the guard, only
+    excluded the missing-tool case."""
+    monkeypatch.setattr("optimai.patterns.patch.shutil.which", lambda name: "/usr/bin/" + name)
+    spec = PatchSpec(
+        goal="rename hello",
+        workdir=workdir,
+        edits=[FileEdit(path=target, old="hello", new="world")],
+        validation_command="python -m py_compile broken.py",
+    )
+    assert pattern.is_validation_command("python -m py_compile broken.py", spec) is True
+
+
+# --------------------------------------------------------------------------
+# _validation_tool helper — first-token extraction, env-var prefix off
+# --------------------------------------------------------------------------
+
+
+def test_validation_tool_extracts_first_token():
+    from optimai.patterns.patch import _validation_tool
+
+    assert _validation_tool("pytest tests/") == "pytest"
+    assert _validation_tool("python -m py_compile x.py") == "python"
+    assert _validation_tool("swiftc -parse Foo.swift") == "swiftc"
+
+
+def test_validation_tool_skips_env_var_assignment():
+    """`VAR=val pytest ...` — first token is an assignment, we can't reliably
+    probe → return None so degradation stays OFF (Layer 1 stays active)."""
+    from optimai.patterns.patch import _validation_tool
+
+    assert _validation_tool("DEBUG=1 pytest tests/") is None
+
+
+def test_validation_tool_returns_none_on_unparsable_or_empty():
+    from optimai.patterns.patch import _validation_tool
+
+    assert _validation_tool(None) is None
+    assert _validation_tool("") is None
+    # Unbalanced quote: shlex.split raises, we swallow → None.
+    assert _validation_tool("pytest 'unterminated") is None

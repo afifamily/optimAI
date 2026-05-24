@@ -127,23 +127,46 @@ def test_mutate_rollback_removes_created_directories(pattern, workdir):
 
 def test_validation_command_python():
     cmd = validation_command_for("python", Path("/tmp/x.py"))
+    # Python is always on PATH in a uv venv — no mock needed.
     assert cmd == "python -m py_compile /tmp/x.py"
 
 
-def test_validation_command_swift_quotes_paths_with_spaces():
+def test_validation_command_swift_quotes_paths_with_spaces(monkeypatch):
+    # Pretend swiftc is on PATH so the test is portable (machines without
+    # Xcode would otherwise see None — Piste B / DEC-024).
+    monkeypatch.setattr("optimai.patterns.create.shutil.which", lambda name: "/usr/bin/" + name)
     cmd = validation_command_for("swift", Path("/tmp/a b/c.swift"))
+    assert cmd is not None
     assert "swiftc -parse " in cmd
     # shlex.quote wraps a path with a space in single quotes.
     assert shlex.quote("/tmp/a b/c.swift") in cmd
 
 
-def test_validation_command_go():
+def test_validation_command_go(monkeypatch):
+    monkeypatch.setattr("optimai.patterns.create.shutil.which", lambda name: "/usr/bin/" + name)
     cmd = validation_command_for("go", Path("/tmp/x.go"))
     assert cmd == "gofmt -e /tmp/x.go"
 
 
 def test_validation_command_none_returns_none():
     assert validation_command_for("none", Path("/tmp/x")) is None
+
+
+# --------------------------------------------------------------------------
+# DEC-024 piste B — validation tool absent ⇒ graceful, deterministic skip
+# --------------------------------------------------------------------------
+
+
+def test_validation_command_returns_none_when_tool_absent(monkeypatch):
+    """Piste B: a missing tool collapses validation to None — same as language='none'."""
+    monkeypatch.setattr("optimai.patterns.create.shutil.which", lambda name: None)
+    assert validation_command_for("swift", Path("/tmp/x.swift")) is None
+    assert validation_command_for("go", Path("/tmp/x.go")) is None
+
+
+def test_validation_command_present_when_tool_on_path(monkeypatch):
+    monkeypatch.setattr("optimai.patterns.create.shutil.which", lambda name: "/opt/bin/" + name)
+    assert validation_command_for("swift", Path("/tmp/x.swift")) is not None
 
 
 def test_python_validation_actually_compiles_a_valid_file(workdir):
@@ -340,3 +363,115 @@ def test_initial_user_message_includes_validation_commands(pattern, workdir):
     msg = pattern.initial_user_message(spec)
     assert "python -m py_compile" in msg
     assert "no check" in msg.lower() or "none" in msg.lower()
+
+
+# --------------------------------------------------------------------------
+# DEC-024 piste B — absent tool: skipped deterministically, never rolls back
+# --------------------------------------------------------------------------
+
+
+def test_is_validation_command_false_when_tool_absent(pattern, workdir, monkeypatch):
+    """Even if the worker invents the canonical command on a missing tool,
+    Layer 1 stays cold — collapses to False because expected becomes None."""
+    monkeypatch.setattr("optimai.patterns.create.shutil.which", lambda name: None)
+    target = workdir / "x.swift"
+    spec = CreateSpec(
+        goal="create swift file with missing toolchain",
+        workdir=workdir,
+        files=[NewFile(path=target, content="// hi\n", language="swift")],
+    )
+    for cmd in (
+        f"swiftc -parse {target}",
+        "swiftc -parse x.swift",
+    ):
+        assert pattern.is_validation_command(cmd, spec) is False
+
+
+def test_initial_user_message_marks_skipped_when_tool_absent(pattern, workdir, monkeypatch):
+    monkeypatch.setattr("optimai.patterns.create.shutil.which", lambda name: None)
+    spec = CreateSpec(
+        goal="create swift file",
+        workdir=workdir,
+        files=[NewFile(path=workdir / "x.swift", content="// hi\n", language="swift")],
+    )
+    msg = pattern.initial_user_message(spec)
+    assert "(skipped — swiftc not on PATH)" in msg
+    assert "swiftc -parse" not in msg
+
+
+def test_mutate_records_skip_when_tool_absent(pattern, workdir, monkeypatch):
+    monkeypatch.setattr("optimai.patterns.create.shutil.which", lambda name: None)
+    target = workdir / "x.swift"
+    spec = CreateSpec(
+        goal="create swift file",
+        workdir=workdir,
+        files=[NewFile(path=target, content="// hi\n", language="swift")],
+    )
+    snap = Snapshot(workdir)
+    try:
+        result = pattern.mutate(spec, snap)
+        # File is created normally — the missing tool only affects validation,
+        # not the create itself.
+        assert target.exists()
+        assert any("swiftc not on PATH" in note for note in result.skipped_validations)
+    finally:
+        snap.cleanup()
+
+
+def test_mutate_no_skip_when_tool_present(pattern, workdir, monkeypatch):
+    monkeypatch.setattr(
+        "optimai.patterns.create.shutil.which", lambda name: "/usr/bin/" + name
+    )
+    target = workdir / "x.swift"
+    spec = CreateSpec(
+        goal="create swift file",
+        workdir=workdir,
+        files=[NewFile(path=target, content="// hi\n", language="swift")],
+    )
+    snap = Snapshot(workdir)
+    try:
+        result = pattern.mutate(spec, snap)
+        assert result.skipped_validations == []
+    finally:
+        snap.cleanup()
+
+
+def test_enrich_report_surfaces_skipped_validations_in_notes(pattern, workdir):
+    f = workdir / "x.swift"
+    f.write_text("// hi\n", encoding="utf-8")
+    report = pattern.build_report(
+        final_payload={"summary": "files written", "failed_file": None},
+        commands_executed=[],
+        stop_reason="converged",
+        iterations_used=1,
+        status="complete",
+        notes="worker note",
+    )
+    enriched = pattern.enrich_report(
+        report,
+        MutationResult(
+            files_changed=[f],
+            diff="",
+            skipped_validations=[f"{f}: swiftc not on PATH (validation skipped)"],
+        ),
+    )
+    assert "worker note" in enriched.notes
+    assert "Skipped validations:" in enriched.notes
+    assert "swiftc not on PATH" in enriched.notes
+
+
+def test_enrich_report_omits_skip_notes_when_none(pattern, workdir):
+    f = workdir / "x.py"
+    f.write_text("x = 1\n", encoding="utf-8")
+    report = pattern.build_report(
+        final_payload={"summary": "ok", "failed_file": None},
+        commands_executed=[],
+        stop_reason="converged",
+        iterations_used=1,
+        status="complete",
+        notes="all good",
+    )
+    enriched = pattern.enrich_report(
+        report, MutationResult(files_changed=[f], diff="", skipped_validations=[])
+    )
+    assert enriched.notes == "all good"

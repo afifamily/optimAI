@@ -44,10 +44,17 @@ class MutationResult:
     engine can surface the diff to the worker (as a user message) and the
     pattern's ``enrich_report`` hook can stamp ``files_changed`` / ``diff`` onto
     the typed report. Frozen — passed read-only across the dispatcher.
+
+    ``skipped_validations`` carries deterministic skip notes (DEC-024
+    precision, 2026-05-24): when the pattern detected at mutate-time that a
+    validation tool is absent from PATH, it records the skip here so
+    ``enrich_report`` can surface it in the report ``notes`` — keeps the
+    degradation visible to the Cortex instead of silent.
     """
 
     files_changed: list[Path] = field(default_factory=list)
     diff: str = ""  # unified diff (difflib), kept compact for the worker turn
+    skipped_validations: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
