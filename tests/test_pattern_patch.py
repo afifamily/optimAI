@@ -258,3 +258,69 @@ def test_patch_module_does_not_import_create():
     src = (Path(__file__).resolve().parents[1] / "src" / "optimai" / "patterns" / "patch.py").read_text()
     assert "patterns.create" not in src
     assert "from optimai.patterns import create" not in src
+
+
+# --------------------------------------------------------------------------
+# DEC-024 amended — status-of-failure hooks
+# --------------------------------------------------------------------------
+
+
+def test_is_validation_command_matches_designated_cmd(pattern, workdir, target):
+    spec = PatchSpec(
+        goal="rename hello",
+        workdir=workdir,
+        edits=[FileEdit(path=target, old="hello", new="world")],
+        validation_command="python -m py_compile hello.py",
+    )
+    assert pattern.is_validation_command("python -m py_compile hello.py", spec) is True
+    # Whitespace tolerant.
+    assert pattern.is_validation_command("  python -m py_compile hello.py  ", spec) is True
+
+
+def test_is_validation_command_rejects_diagnostics(pattern, workdir, target):
+    """A read-only diagnostic the worker may run between the patch and the
+    report is NOT the validation cmd — protects the worker's right to peek."""
+    spec = PatchSpec(
+        goal="rename hello",
+        workdir=workdir,
+        edits=[FileEdit(path=target, old="hello", new="world")],
+        validation_command="python -m py_compile hello.py",
+    )
+    for diagnostic in ("cat hello.py", "head -n 5 hello.py", "which python", "grep hello hello.py"):
+        assert pattern.is_validation_command(diagnostic, spec) is False
+
+
+def test_is_validation_command_returns_false_when_no_validation_declared(pattern, workdir, target):
+    spec = PatchSpec(
+        goal="rename hello",
+        workdir=workdir,
+        edits=[FileEdit(path=target, old="hello", new="world")],
+        validation_command=None,
+    )
+    assert pattern.is_validation_command("anything at all", spec) is False
+
+
+def test_worker_declares_failure_flags_named_edit(pattern):
+    assert pattern.worker_declares_failure({"summary": "broke", "failed_edit": "x: syntax"}) is True
+    assert pattern.worker_declares_failure({"summary": "ok", "failed_edit": None}) is False
+    assert pattern.worker_declares_failure({}) is False
+
+
+def test_build_report_preserves_worker_verdict_on_error_status(pattern):
+    """DEC-024 amended: when the engine downgrades a converged report to
+    status='error', build_report must still surface SUMMARY + FAILED_EDIT so
+    the Cortex sees the worker's verdict."""
+    payload = {"summary": "py_compile failed at line 3", "failed_edit": "hello.py: syntax break"}
+    report = pattern.build_report(
+        final_payload=payload,
+        commands_executed=[
+            {"cmd": "python -m py_compile hello.py", "exit": 1, "stdout_truncated": False}
+        ],
+        stop_reason="converged",
+        iterations_used=2,
+        status="error",
+        notes="validation command failed (deterministic guard)",
+    )
+    assert report.status == "error"
+    assert report.summary == "py_compile failed at line 3"
+    assert report.failed_edit == "hello.py: syntax break"

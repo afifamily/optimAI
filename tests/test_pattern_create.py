@@ -257,6 +257,77 @@ def test_create_pattern_spec_model(pattern):
     assert pattern.spec_model is CreateSpec
 
 
+# --------------------------------------------------------------------------
+# DEC-024 amended — status-of-failure hooks
+# --------------------------------------------------------------------------
+
+
+def test_is_validation_command_matches_per_file_syntax_check(pattern, workdir):
+    target = workdir / "x.py"
+    spec = CreateSpec(
+        goal="create x.py",
+        workdir=workdir,
+        files=[NewFile(path=target, content="x = 1\n", language="python")],
+    )
+    expected = validation_command_for("python", target)
+    assert pattern.is_validation_command(expected, spec) is True
+    # Whitespace tolerant + ignored when the worker emits a diagnostic.
+    assert pattern.is_validation_command("  " + expected + "  ", spec) is True
+    assert pattern.is_validation_command("which python", spec) is False
+    assert pattern.is_validation_command(f"cat {target}", spec) is False
+
+
+def test_is_validation_command_handles_language_none(pattern, workdir):
+    """A NewFile with language='none' contributes no validation cmd."""
+    target = workdir / "raw.txt"
+    spec = CreateSpec(
+        goal="drop a text file",
+        workdir=workdir,
+        files=[NewFile(path=target, content="hi\n", language="none")],
+    )
+    # No language-aware cmd → nothing is a validation cmd for this spec.
+    for cmd in ("python -m py_compile raw.txt", "cat raw.txt", "ls"):
+        assert pattern.is_validation_command(cmd, spec) is False
+
+
+def test_is_validation_command_recognises_each_file_in_a_pack(pattern, workdir):
+    a = workdir / "a.py"
+    b = workdir / "b.py"
+    spec = CreateSpec(
+        goal="create two files",
+        workdir=workdir,
+        files=[
+            NewFile(path=a, content="x = 1\n", language="python"),
+            NewFile(path=b, content="y = 2\n", language="python"),
+        ],
+    )
+    assert pattern.is_validation_command(validation_command_for("python", a), spec) is True
+    assert pattern.is_validation_command(validation_command_for("python", b), spec) is True
+
+
+def test_worker_declares_failure_flags_named_file(pattern):
+    assert pattern.worker_declares_failure({"summary": "broke", "failed_file": "x.py: syntax"}) is True
+    assert pattern.worker_declares_failure({"summary": "ok", "failed_file": None}) is False
+    assert pattern.worker_declares_failure({}) is False
+
+
+def test_build_report_preserves_worker_verdict_on_error_status(pattern):
+    """Mirror of the patch test: SUMMARY + FAILED_FILE must survive a
+    downgrade to status='error' (DEC-024 amended)."""
+    payload = {"summary": "syntax check failed", "failed_file": "x.py: invalid"}
+    report = pattern.build_report(
+        final_payload=payload,
+        commands_executed=[],
+        stop_reason="converged",
+        iterations_used=2,
+        status="error",
+        notes="validation command failed",
+    )
+    assert report.status == "error"
+    assert report.summary == "syntax check failed"
+    assert report.failed_file == "x.py: invalid"
+
+
 def test_initial_user_message_includes_validation_commands(pattern, workdir):
     spec = CreateSpec(
         goal="create two files",

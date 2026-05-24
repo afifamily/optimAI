@@ -232,18 +232,15 @@ class CreatePattern:
         status: Literal["complete", "incomplete", "error"],
         notes: str,
     ) -> CreateReport:
-        if status == "complete" and final_payload is not None:
-            return CreateReport(
-                status="complete",
-                summary=final_payload.get("summary"),
-                failed_file=final_payload.get("failed_file"),
-                iterations_used=iterations_used,
-                stop_reason=stop_reason,
-                commands_executed=commands_executed,
-                notes=notes[:1024],
-            )
+        # DEC-024 amended: preserve the worker's SUMMARY / FAILED_FILE even
+        # when the engine downgrades a converged report to status="error"
+        # (deterministic guard fired) — the Cortex needs to see WHY.
+        summary = final_payload.get("summary") if final_payload else None
+        failed_file = final_payload.get("failed_file") if final_payload else None
         return CreateReport(
             status=status,
+            summary=summary,
+            failed_file=failed_file,
             iterations_used=iterations_used,
             stop_reason=stop_reason,
             commands_executed=commands_executed,
@@ -264,3 +261,30 @@ class CreatePattern:
         # Validation command timed out → state of the validator unknown, files
         # were just written → abort and let the snapshot restore (DEC-022).
         return "abort"
+
+    # ---- DEC-024 amended — status-of-failure hooks --------------------------
+
+    def is_validation_command(self, cmd: str, spec: CreateSpec) -> bool:
+        """Layer 1 — every per-file syntax-check command counts as validation.
+
+        We compute the canonical set (one entry per file whose language is
+        not ``"none"``) and look for a whitespace-normalised exact match. The
+        worker's optional read-only diagnostic (`which gofmt`, `cat file`) is
+        not in that set, so a `command not found` on a missing tool keeps the
+        graceful-degradation semantics described in the system prompt.
+        """
+        normalised = cmd.strip()
+        for f in spec.files:
+            resolved = _resolve_file_path(f, spec.workdir)
+            expected = validation_command_for(f.language, resolved)
+            if expected is not None and normalised == expected.strip():
+                return True
+        return False
+
+    def worker_declares_failure(self, payload: dict) -> bool:
+        """Layer 2 — a named FAILED_FILE in the worker's report counts as failure.
+
+        Mirrors PatchPattern: the worker may exit-0 the syntax check but still
+        spot a problem (e.g. an empty file the linter happily accepts).
+        """
+        return payload.get("failed_file") is not None

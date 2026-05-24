@@ -336,3 +336,273 @@ def test_dispatcher_has_no_create_imports():
     forbidden = ("CreateReport", "CreateSpec", "patterns.create", "patterns import create", "NewFile")
     for token in forbidden:
         assert token not in source, f"dispatcher.py leaks Create specificity: {token!r}"
+
+
+# --------------------------------------------------------------------------
+# DEC-024 amended — status-of-failure cascade in the engine
+# --------------------------------------------------------------------------
+
+
+def _install_validation_aware_pattern(
+    name: str,
+    *,
+    is_validation,
+    worker_declares=None,
+    mutate_fn=None,
+):
+    """Register an ad-hoc pattern that opts into the new DEC-024 hooks.
+
+    Mirrors `_install_mutating_pattern` but exposes the two new hooks the
+    engine consults via getattr. Mutation is optional so the cascade can be
+    tested on a read-only-shaped pattern too.
+    """
+
+    class _V:
+        def __init__(self):
+            self.name = name
+            self.spec_model = DiagnoseSpec
+            self.tool_description = "ad-hoc validation-aware pattern"
+
+        def system_prompt(self, spec):
+            return "dummy system"
+
+        def initial_user_message(self, spec):
+            return f"GOAL:\n{spec.goal}"
+
+        def operator_text(self, spec):
+            return spec.goal
+
+        def parse(self, worker_text):
+            if "ACTION: report" in worker_text:
+                return Step(
+                    kind="final",
+                    think="worker says ok",
+                    payload={
+                        "root_cause": "ok",
+                        "evidence": [],
+                        "temporary_fix": None,
+                        "permanent_fix": None,
+                        # Surface a flag so worker_declares_failure can see it.
+                        "fail_flag": "TESTFLAG" in worker_text,
+                    },
+                )
+            # Each shell block emits its CMD verbatim.
+            for line in worker_text.splitlines():
+                if line.startswith("CMD:"):
+                    return Step(kind="command", think="try", cmd=line[4:].strip())
+            return Step(kind="invalid", reason="no CMD")
+
+        def build_report(self, **kwargs):
+            return DiagnoseReport(
+                status=kwargs["status"],
+                stop_reason=kwargs["stop_reason"],
+                iterations_used=kwargs["iterations_used"],
+                commands_executed=kwargs["commands_executed"],
+                notes=kwargs["notes"][:1024],
+            )
+
+        def on_command_timeout(self, cmd, step):
+            return "abort"
+
+    _V.is_validation_command = lambda self, cmd, spec: is_validation(cmd, spec)
+    if worker_declares is not None:
+        _V.worker_declares_failure = lambda self, payload: worker_declares(payload)
+    if mutate_fn is not None:
+        _V.mutate = lambda self, spec, snap: mutate_fn(spec, snap)
+
+    instance = _V()
+    patterns_base._REGISTRY[name] = instance
+    return instance
+
+
+# A simple commenting trick: `false # VAL` and `false # DIAG` both produce a
+# real shell exit (1) but carry an inline marker the lambdas can match on.
+_VAL_MARK = "# VAL"
+_DIAG_MARK = "# DIAG"
+
+
+def _is_validation_by_marker(cmd, spec):
+    return _VAL_MARK in cmd
+
+
+async def test_validation_exit_nonzero_forces_error(_registry_isolation, tmp_path):
+    """Layer 1 — a designated validation cmd exiting non-zero overrides
+    the worker's converged 'complete' report (the very bug DEC-024 amended fixes)."""
+    _install_validation_aware_pattern("val_aware", is_validation=_is_validation_by_marker)
+
+    # Worker runs the validation cmd (`false` exits 1, the comment is just
+    # a marker the lambda matches on), then converges. Pre-fix, status would be "complete".
+    responses = [
+        f"THINK: validate\nACTION: shell\nCMD: false {_VAL_MARK}\n",
+        _report_block("worker thinks all good"),
+    ]
+    async with _scripted_worker(responses) as client:
+        report = await dispatch(
+            "val_aware",
+            DiagnoseSpec(goal="run the validation against a failing cmd", workdir=tmp_path),
+            settings=_settings(),
+            client=client,
+        )
+
+    assert report.status == "error", (
+        "deterministic guard did not override worker convergence"
+    )
+    assert report.stop_reason == "converged"  # worker DID converge — only status was downgraded
+    assert "validation command failed" in report.notes
+    assert "deterministic guard" in report.notes
+
+
+async def test_non_validation_exit_nonzero_stays_complete(_registry_isolation, tmp_path):
+    """Layer 1 must NOT fire on diagnostic read-only commands the worker
+    interleaves (`grep` finding nothing → exit 1 → don't rollback)."""
+    _install_validation_aware_pattern("val_aware_diag", is_validation=_is_validation_by_marker)
+
+    # Worker runs a diagnostic (`false # DIAG` exits 1 but is NOT marked as
+    # validation), then converges. status must stay "complete".
+    responses = [
+        f"THINK: peek\nACTION: shell\nCMD: false {_DIAG_MARK}\n",
+        _report_block("nothing wrong with the actual artifact"),
+    ]
+    async with _scripted_worker(responses) as client:
+        report = await dispatch(
+            "val_aware_diag",
+            DiagnoseSpec(goal="diagnose without firing the guard", workdir=tmp_path),
+            settings=_settings(),
+            client=client,
+        )
+
+    assert report.status == "complete"
+    assert report.stop_reason == "converged"
+
+
+async def test_worker_declares_failure_on_exit_zero(_registry_isolation, tmp_path):
+    """Layer 2 — the worker can downgrade complete to error on exit 0 by
+    setting a semantic-failure flag in the payload."""
+    _install_validation_aware_pattern(
+        "val_aware_layer2",
+        is_validation=_is_validation_by_marker,
+        worker_declares=lambda payload: bool(payload.get("fail_flag")),
+    )
+
+    # Validation cmd succeeds (exit 0), but the worker's report carries
+    # the TESTFLAG marker — parse() puts fail_flag=True in payload.
+    responses = [
+        f"THINK: validate\nACTION: shell\nCMD: true {_VAL_MARK}\n",
+        "THINK: TESTFLAG\nACTION: report\nROOT_CAUSE: tests passed by skipping\n"
+        "EVIDENCE:\n- 0 tests collected\nTEMPORARY_FIX: none\nPERMANENT_FIX: none\n",
+    ]
+    async with _scripted_worker(responses) as client:
+        report = await dispatch(
+            "val_aware_layer2",
+            DiagnoseSpec(goal="exercise layer 2", workdir=tmp_path),
+            settings=_settings(),
+            client=client,
+        )
+
+    assert report.status == "error"
+    assert "worker declared semantic failure" in report.notes
+
+
+async def test_layer1_prime_over_layer2_invariant(_registry_isolation, tmp_path):
+    """The cascade order MUST enforce 'deterministic guard prime' — even
+    when the worker payload would also have triggered Layer 2, the engine
+    reports Layer 1's reason (the validation exit, not the worker flag)."""
+    _install_validation_aware_pattern(
+        "val_aware_both",
+        is_validation=_is_validation_by_marker,
+        worker_declares=lambda payload: bool(payload.get("fail_flag")),
+    )
+
+    responses = [
+        f"THINK: validate\nACTION: shell\nCMD: false {_VAL_MARK}\n",
+        "THINK: TESTFLAG\nACTION: report\nROOT_CAUSE: also bad\n"
+        "EVIDENCE:\n- both\nTEMPORARY_FIX: none\nPERMANENT_FIX: none\n",
+    ]
+    async with _scripted_worker(responses) as client:
+        report = await dispatch(
+            "val_aware_both",
+            DiagnoseSpec(goal="both layers say fail", workdir=tmp_path),
+            settings=_settings(),
+            client=client,
+        )
+
+    assert report.status == "error"
+    # Layer 1 message wins — proves the cascade order.
+    assert "deterministic guard" in report.notes
+    assert "worker declared semantic failure" not in report.notes
+
+
+async def test_layer1_triggers_snapshot_restore_on_mutating_pattern(
+    _registry_isolation, tmp_path
+):
+    """End-to-end: mutation succeeds → loop runs the validation cmd (exit≠0)
+    → engine downgrades to error → snapshot restores the file. This is the
+    exact path the live B-rollback bug walks, exercised here with a mocked
+    worker so the unit suite can guard the regression."""
+    f = tmp_path / "broken.py"
+    original = "def greet():\n    return 'hi'\n"
+    f.write_text(original, encoding="utf-8")
+
+    def mut(spec, snap: Snapshot):
+        snap.protect(f)
+        # Simulate a deterministic mutation that breaks the file.
+        f.write_text("def greet()\n    return 'hi'\n", encoding="utf-8")
+        return MutationResult(files_changed=[f], diff="--- a/broken.py\n+++ b/broken.py\n")
+
+    _install_validation_aware_pattern(
+        "val_aware_mut",
+        is_validation=_is_validation_by_marker,
+        mutate_fn=mut,
+    )
+
+    responses = [
+        f"THINK: validate the mutation\nACTION: shell\nCMD: false {_VAL_MARK}\n",
+        _report_block("compile failed, naming the cause"),
+    ]
+    async with _scripted_worker(responses) as client:
+        report = await dispatch(
+            "val_aware_mut",
+            DiagnoseSpec(goal="mutate then watch the guard fire", workdir=tmp_path),
+            settings=_settings(),
+            client=client,
+        )
+
+    assert report.status == "error"
+    # Atomicity intra-appel: file restored to its pre-mutation bytes (DEC-024).
+    assert f.read_text(encoding="utf-8") == original
+
+
+async def test_buggy_is_validation_hook_keeps_dispatch_alive(_registry_isolation, tmp_path):
+    """A hook that raises must not crash the dispatch — engine logs and
+    treats the entry as non-validation (preserves the worker's verdict)."""
+
+    def boom(cmd, spec):
+        raise RuntimeError("buggy pattern")
+
+    _install_validation_aware_pattern("val_aware_buggy", is_validation=boom)
+
+    responses = [
+        f"THINK: try\nACTION: shell\nCMD: false {_DIAG_MARK}\n",
+        _report_block("ok"),
+    ]
+    async with _scripted_worker(responses) as client:
+        report = await dispatch(
+            "val_aware_buggy",
+            DiagnoseSpec(goal="exercise the buggy hook path", workdir=tmp_path),
+            settings=_settings(),
+            client=client,
+        )
+
+    # Hook raised on every entry → treated as no-validation → worker's
+    # converged "complete" stands.
+    assert report.status == "complete"
+
+
+async def test_legacy_pattern_without_hooks_keeps_complete(tmp_path):
+    """A/D regression — diagnose has neither hook → the cascade is silently
+    inert and the legacy converged-⇒-complete behavior is preserved."""
+    spec = DiagnoseSpec(goal="legacy converge path stays complete", workdir=tmp_path)
+    async with _scripted_worker([_report_block("legacy ok")]) as client:
+        report = await dispatch("diagnose", spec, settings=_settings(), client=client)
+    assert report.status == "complete"
+    assert report.stop_reason == "converged"

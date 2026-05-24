@@ -16,6 +16,14 @@ hook via ``getattr`` (same mechanism as ``on_command_timeout`` from DEC-022)
 and leaves untouched patterns alone. Mirror hook ``enrich_report`` lets
 mutating patterns attach diff/files-changed/failed-target fields after
 ``build_report`` without changing its signature.
+
+DEC-024 amendment (2026-05-24) adds two more OPTIONAL hooks for the
+status-of-failure problem, both via ``getattr`` (DEC-021 extension):
+``is_validation_command`` (Layer 1 — deterministic guard, non-overridable: a
+designated validation command exiting non-zero forces ``status="error"``) and
+``worker_declares_failure`` (Layer 2 — worker may add a semantic failure on
+exit 0). Patterns that declare neither keep the previous "converged ⇒
+complete" behavior (A/D unchanged).
 """
 
 from dataclasses import dataclass, field

@@ -49,6 +49,59 @@ def _per_command_timeout(global_timeout: int) -> int:
     return min(30, global_timeout)
 
 
+def _failed_validation_entry(
+    pattern: Pattern, spec: BaseModel, commands_executed: list[dict]
+) -> dict | None:
+    """Layer 1 — deterministic guard (DEC-024 amended).
+
+    Scan the executed commands; return the first one that the pattern
+    designates as a validation command AND that exited non-zero. The pattern's
+    ``is_validation_command`` hook is OPTIONAL — when absent (A/D, or any
+    pattern without a notion of validation), the guard is silently inert and
+    the loop keeps the legacy "converged ⇒ complete" behavior.
+
+    A buggy hook (raising) is treated as "not a validation command" for that
+    entry — better to keep the worker's verdict than to crash the dispatch on
+    a faulty pattern. The hook MUST NOT have side effects (engine calls it
+    once per entry).
+    """
+    hook = getattr(pattern, "is_validation_command", None)
+    if hook is None:
+        return None
+    for entry in commands_executed:
+        if entry["exit"] == 0:
+            continue
+        try:
+            if hook(entry["cmd"], spec):
+                return entry
+        except Exception as exc:  # noqa: BLE001 — never let a buggy hook crash dispatch
+            logger.warning(
+                "dispatch: is_validation_command raised %s on cmd=%r — treating as non-validation",
+                exc,
+                entry["cmd"][:120],
+            )
+    return None
+
+
+def _worker_declared_failure(pattern: Pattern, payload: dict | None) -> bool:
+    """Layer 2 — worker additive (DEC-024 amended).
+
+    Optional hook lets a pattern downgrade a converged report to ``"error"``
+    when the worker's payload semantically indicates failure even on exit 0
+    (e.g. ``failed_edit`` populated, a ``result=fail`` marker). Only consulted
+    when Layer 1 did not fire — the invariant "deterministic guard prime" is
+    enforced by the call order in ``_run_loop``, not by the hook itself.
+    """
+    hook = getattr(pattern, "worker_declares_failure", None)
+    if hook is None or payload is None:
+        return False
+    try:
+        return bool(hook(payload))
+    except Exception as exc:  # noqa: BLE001 — buggy hook must not flip a complete to error
+        logger.warning("dispatch: worker_declares_failure raised %s — keeping complete", exc)
+        return False
+
+
 def _resolve_timeout_policy(pattern: Pattern, cmd: str, step: Step) -> str:
     """Consult the pattern's per-command timeout policy. Default = abort (DEC-022).
 
@@ -219,13 +272,39 @@ async def _run_loop(
             continue
 
         if step.kind == "final":
+            # DEC-024 amended — status-of-failure cascade:
+            #   Layer 1 (deterministic guard, non-overridable): if the pattern
+            #     designates a validation command and it exited non-zero, force
+            #     status="error" regardless of what the worker reports.
+            #   Layer 2 (worker additive, optional): on exit 0 the worker may
+            #     declare a semantic failure (e.g. test "passes" by skipping).
+            # The cascade order enforces the invariant by construction — the
+            # worker can only ADD a failure, never subtract a deterministic one.
+            failed_val = _failed_validation_entry(pattern, spec, commands_executed)
+            if failed_val is not None:
+                return pattern.build_report(
+                    final_payload=step.payload,
+                    commands_executed=commands_executed,
+                    stop_reason="converged",
+                    iterations_used=iteration,
+                    status="error",
+                    notes=(
+                        f"validation command failed (deterministic guard): "
+                        f"{failed_val['cmd']!r} exited {failed_val['exit']}. "
+                        f"Worker said: {step.think}"
+                    ),
+                )
+            status = "error" if _worker_declared_failure(pattern, step.payload) else "complete"
+            notes = step.think if status == "complete" else (
+                f"worker declared semantic failure on exit 0. {step.think}"
+            )
             return pattern.build_report(
                 final_payload=step.payload,
                 commands_executed=commands_executed,
                 stop_reason="converged",
                 iterations_used=iteration,
-                status="complete",
-                notes=step.think,
+                status=status,
+                notes=notes,
             )
 
         # step.kind == "invalid" — one correction allowed, then bail.

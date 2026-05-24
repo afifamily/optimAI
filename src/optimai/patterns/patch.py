@@ -221,18 +221,17 @@ class PatchPattern:
         # Mutation-side fields (diff / files_changed) are stamped by
         # enrich_report after the dispatcher has the MutationResult — leave
         # them at defaults here.
-        if status == "complete" and final_payload is not None:
-            return PatchReport(
-                status="complete",
-                summary=final_payload.get("summary"),
-                failed_edit=final_payload.get("failed_edit"),
-                iterations_used=iterations_used,
-                stop_reason=stop_reason,
-                commands_executed=commands_executed,
-                notes=notes[:1024],
-            )
+        #
+        # DEC-024 amended: when the engine's deterministic guard downgrades a
+        # converged report to status="error", final_payload still carries the
+        # worker's verdict (SUMMARY + FAILED_EDIT) — surface it instead of
+        # dropping it, so the Cortex sees WHY the patch is being rolled back.
+        summary = final_payload.get("summary") if final_payload else None
+        failed_edit = final_payload.get("failed_edit") if final_payload else None
         return PatchReport(
             status=status,
+            summary=summary,
+            failed_edit=failed_edit,
             iterations_used=iterations_used,
             stop_reason=stop_reason,
             commands_executed=commands_executed,
@@ -264,3 +263,26 @@ class PatchPattern:
         # half-ran. DEC-022: abort, let the Cortex decide (snapshot will revert
         # since report.status will be "error").
         return "abort"
+
+    # ---- DEC-024 amended — status-of-failure hooks --------------------------
+
+    def is_validation_command(self, cmd: str, spec: PatchSpec) -> bool:
+        """Layer 1 — the cortex-supplied validation command is THE one to guard.
+
+        Whitespace-normalised exact match. Diagnostic read-only commands the
+        worker may interleave (`cat`, `head`, `which`...) are intentionally
+        NOT validation — a `grep` that finds nothing must not trigger rollback.
+        """
+        if not spec.validation_command:
+            return False
+        return cmd.strip() == spec.validation_command.strip()
+
+    def worker_declares_failure(self, payload: dict) -> bool:
+        """Layer 2 — a named FAILED_EDIT in the worker's report counts as failure.
+
+        The system prompt instructs the worker to set FAILED_EDIT when
+        validation fails ("name the failure cause in the SUMMARY"). When the
+        validation command itself exits 0 but the worker still names a failed
+        edit (e.g. tests "pass" because they were skipped), trust that signal.
+        """
+        return payload.get("failed_edit") is not None
