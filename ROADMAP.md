@@ -8,8 +8,8 @@ chose d'utilisable avant la suivante.
 | Phase | Objectif | Statut |
 |-------|----------|--------|
 | **Phase 1** | Bootstrap + PoC Patterns A & D | ✅ Complète (étapes 1–11) |
-| **Phase 2** | Patterns B (Patch) & C (Create) | 📝 Planifiée |
-| **Phase 3** | Enrichissement collaboratif via TBS/Bassmati/QNAP | 📝 Planifiée |
+| **Phase 2** | Patterns B (Patch) & C (Create) | ✅ Complète |
+| **Phase 3** | Enrichissement collaboratif via TBS/Bassmati/QNAP | 🔄 En cours |
 | **Phase 4** | Robustesse & observabilité | 📝 Planifiée |
 
 ---
@@ -156,7 +156,7 @@ en local avec un rapport compressé qui retourne au Cortex.
 
 ---
 
-## Phase 2 — Patterns B & C
+## Phase 2 — Patterns B & C (complète)
 
 **Objectif** : Étendre aux modifications de fichiers (Patch) et créations
 (Create), avec garde-fous renforcés. **Périmètre de réversibilité fixé par
@@ -164,40 +164,74 @@ en local avec un rapport compressé qui retourne au Cortex.
 seulement (la réversibilité de lot inter-appels est reportée post-Phase 3 —
 voir Phase 4).
 
-### Étapes prévues
+### Étapes (livrées CLI #7–#9, commits `fb6d2b5` / `9b7dffd` + CLI #9)
 
-- Pattern B (Patch) : édits ciblés recherche-remplacement (`old`/`new` par
-  fichier) fournis par le Cortex, appliqués de façon **déterministe**
-  (DEC-024), avec **diff preview** (`difflib`, remonté dans le report) et
-  **atomicité intra-appel** (restauration de l'état d'avant l'appel sur échec)
-- Pattern C (Create) : création de fichiers depuis une spec (chemin + contenu
-  fournis par le Cortex), avec **validation syntaxique** via shell (Swift /
-  Python / Go selon le projet) et même atomicité intra-appel
-- **Atomicité intra-appel** via un helper de snapshot partagé : copie
-  temporaire éphémère des fichiers touchés (DEC-024 — **pas** `git stash`,
-  optimAI reste sans autorité git), restaurée sur échec, nettoyée sur succès
-- Acte mutant **déterministe et Cortex-sourced** ; le worker pilote la
-  validation et le verdict, pas la mutation (DEC-024)
-- Premier test du contrat `Pattern` (DEC-021) sur une **phase de mutation**
-  nouvelle (extension rétrocompatible attendue, pas de refonte du moteur)
-- Tests d'intégration sur les patterns combinés (A+B, D+C)
+- ✅ **Pattern B (Patch)** : édits ciblés recherche-remplacement (`old`/`new`
+  par fichier) fournis par le Cortex, appliqués de façon **déterministe**
+  (DEC-024), avec **diff preview** (`difflib`) et **atomicité intra-appel**
+  (restauration de l'état d'avant l'appel sur échec)
+- ✅ **Pattern C (Create)** : création de fichiers depuis une spec (chemin +
+  contenu fournis par le Cortex), avec **validation syntaxique** via shell
+  (Swift / Python / Go) et même atomicité intra-appel
+- ✅ **Atomicité intra-appel** via helper de snapshot (`snapshot.py`) : copie
+  temporaire éphémère des fichiers touchés (**pas** `git stash`), restaurée sur
+  échec, nettoyée sur succès
+- ✅ Acte mutant **déterministe et Cortex-sourced** ; worker = validation +
+  verdict, pas mutation (DEC-024) — pari sémantique confirmé en smoke live
+- ✅ **Test DEC-021 sur la phase de mutation** : branchée par hooks optionnels
+  (`mutate`/`enrich_report` via `getattr`), 0 signature touchée, moteur non
+  refondu → DEC-021 tient (3è/4è preuves)
+- ✅ Sémantique du statut d'échec durcie (DEC-024 amendée + précisée) :
+  cascade 2 couches (Layer 1 déterministe non contournable + Layer 2 worker
+  additif) ; un outil de validation absent (exit 127) ne rollback pas un
+  fichier valide (dégradation propre côté code via `shutil.which`)
+- ✅ Tests d'intégration patterns combinés (A+B, D+C)
 
 ---
 
-## Phase 3 — Enrichissement collaboratif
+## Phase 3 — Enrichissement collaboratif (en cours)
 
 **Objectif** : Faire émerger de nouveaux patterns à partir des sessions
 passées des autres projets.
 
-### Étapes prévues
+### Fait (Desktop #13, 2026-05-25)
 
-- Prompt structuré pour chaque instance Claude (TBS, Bassmati, QNAP)
-  qui explore `conversation_search` sur ses 50 dernières sessions
-- Format de sortie : liste de patterns avec exemples concrets
-- Hassan valide les patterns proposés
-- Nouveaux patterns ajoutés au Dispatcher (E, F, ...)
+- ✅ **Méthodologie de collecte** ([DEC-025](decisions/DEC-025-phase3-pattern-collection.md))
+  : instrument générique paramétré par projet
+  (`.drafts/claude/phase3/COLLECT_PROMPT.md`), lancé depuis chaque espace-projet
+  Claude (scope `conversation_search` par projet), avec accès au repo optimAI
+  pour comparer les candidats à l'existant. Banc d'essai TBS d'abord, puis
+  généralisation Bassmati + QNAP.
+- ✅ **Trois collectes exécutées** → agrégation cross-projet
+  `docs/PATTERN_CANDIDATES.md`. Résultat : un seul nouveau pattern à construire
+  (E/Scan, prouvé sur les 3 projets) ; le reste de la valeur locale déjà
+  couvert par A/D.
+- ✅ **Pattern E (Scan/Audit)** (CLI #10, commit `fd810e0`) : read-only,
+  motifs `required`/`forbidden`/`secret_patterns` Cortex-sourced, sources FS
+  (grep) + HTTP (GET), report `matches` + verdict pass/fail. 5ᵉ preuve DEC-021
+  (`base.py` + `server.py` strictement non touchés).
+- ✅ **Redaction des valeurs de secrets en sortie**
+  ([DEC-026](decisions/DEC-026-secret-value-redaction-in-reports.md)) : une
+  valeur de secret peut entrer (motif à chercher) mais ne ressort jamais en
+  clair — redaction déterministe côté Dispatcher sur les 3 vecteurs
+  (`matches.text/pattern`, `commands_executed.cmd`, champs libres) avant retour
+  Cortex ET avant log.
+
+### À venir
+
+- **Priorisation d'optimAI par le Cortex** (sujet d'ouverture Desktop #14) :
+  comment Claude (Desktop + CLI) préfère optimAI avant d'aller chercher un
+  autre outil (ex. bascule via skills) + traçabilité des cas où optimAI a été
+  ignoré, pour identifier de nouveaux patterns prospects. (Transverse Phase
+  3→Phase 4 : enrichissement *via l'usage* plutôt que *via l'historique*.)
+- **Usages D/A déjà délégables** à documenter comme specs-types réutilisables
+  (build-test, diagnose, migrations, lancer-script, doc-scan local — voir
+  `docs/PATTERN_CANDIDATES.md`, File A).
+- **`ssh-remote`** : dimension d'exécution distante (gate l'opérationnel
+  QNAP/prod, File B de `PATTERN_CANDIDATES.md`) — DEC dédiée (extension
+  sandbox→hôte distant), pilote read-only qnap-01.
 - Évolution potentielle vers un framework si la complexité l'exige
-  (Smolagents, à reconsidérer à ce stade — voir DEC-002)
+  (Smolagents, à reconsidérer — voir DEC-002). Non justifié à ce jour.
 
 ---
 

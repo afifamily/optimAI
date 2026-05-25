@@ -472,8 +472,61 @@ Session longue, en deux temps, séparée par Desktop #5.
 - Rédaction `CLI_PROMPT_009_validation_tool_absent.md` (résout la collision +
   tests mockés déterministes du cas outil-absent — le trou de couverture).
 
-**Fin de session #12 — à committer par Hassan (DEC-009) :** commit CLI `9b7dffd`
-(non poussé) ; artefacts Desktop non versionnés (`DECISIONS.md`, `ROADMAP.md`,
-`decisions/DEC-024-*` amendé/précisé, briefs CLI #7/#8/#9, README CLI). CLI #9
-en attente d'exécution. Smoke C-swift-skip (dégradation) → déplacé en test mocké
-sous CLI #9 (le live ne peut pas le rendre déterministe).
+**Fin de session #12 — clôturée (mise à jour Desktop #13)** : commit CLI `9b7dffd`
+(#8) + CLI #9 (`CLI_PROMPT_009`, cas outil-absent) exécutés et poussés. Phase 2
+close. Les artefacts Desktop #12 ont été committés par Hassan (DEC-009).
+
+### Session Desktop #13 (2026-05-25)
+
+- **Lancement de la Phase 3** (enrichissement collaboratif). Reprise via
+  DECISIONS + HANDOVER #12 + ROADMAP ; Phase 2 confirmée close.
+- **DEC-025 actée** (✅) : méthodologie de collecte de patterns. Instrument
+  générique paramétré par projet (`.drafts/claude/phase3/COLLECT_PROMPT.md`),
+  lancé depuis chaque espace-projet Claude (contrainte : scope
+  `conversation_search` par projet — une seule instance ne peut pas collecter
+  cross-projet) ; accès au repo optimAI pour comparer les candidats à
+  l'existant (réducteur de faux positifs) ; banc d'essai TBS d'abord. Passée ✅
+  sur preuve (rapport TBS exploitable, filtrage juste, 0 correction requise).
+- **Trois collectes exécutées par Hassan** (TBS pilote, puis Bassmati + QNAP) →
+  rapports `.drafts/claude/phase3/CANDIDATES_*.md` → **agrégation cross-projet**
+  `docs/PATTERN_CANDIDATES.md`. Résultats structurants : (a) un seul nouveau
+  pattern à construire — **E/Scan**, prouvé sur les 3 projets ; (b) le reste de
+  la valeur locale déjà couvert par A/D (specs-types à documenter) ; (c)
+  **découverte : `ssh-remote` est une *dimension d'exécution distante*
+  transverse** (pas un pattern) qui gate l'opérationnel QNAP/prod — dossier
+  d'instruction déjà prêt dans `PATTERN_CANDIDATES.md` (File B) pour une DEC
+  future.
+- **DEC-026 actée** (✅, validée par Hassan sur 3 points) : non-divulgation des
+  valeurs de secrets en sortie. Raffinement de DEC-008 §3 — la vraie tension
+  n'est pas l'entrée (le worker peut voir une valeur fournie comme motif, via
+  `context`) mais la **sortie** (report remonté au Cortex + log disque). Trois
+  vecteurs de fuite identifiés par lecture des schémas : `matches[].text`,
+  `commands_executed[].cmd` (la commande `grep "<valeur>"` contient le motif !),
+  champs libres. Redaction **déterministe côté Dispatcher** (pas le worker —
+  cohérent DEC-024), avant retour ET avant log. Coût fonctionnel nul (compte +
+  localisation suffisent).
+- **Brief `CLI_PROMPT_010` → Pattern E livré (CLI #10, commit `fd810e0`)** :
+  read-only (moule Diagnose, politique `recover`), motifs
+  `required`/`forbidden`/`secret_patterns` Cortex-sourced, sources FS (grep) +
+  HTTP (GET), report `ScanReport` (forme nouvelle : `matches` + verdict
+  pass/fail). **307 tests (+58), 5 gardes architecturales** (`no_scan_imports`
+  nouveau), ruff clean. **5ᵉ preuve DEC-021** : `base.py` et `server.py`
+  **strictement non touchés** ; redaction branchée via `getattr(spec,
+  "secret_patterns", [])` ; `optimai_scan` exposé par le registre. DEC-026
+  vérifiée sur les 3 vecteurs + persistance log (filtre logging sur handlers
+  `optimai`) + inertie A/D/B/C.
+- **Convention « Session CLI ID » généralisée** (demande Hassan) : tout REPORT CLI
+  consigne désormais son ID de session en en-tête — inscrit dans la structure-type
+  des briefs (README CLI). Garde le lien brief→report→session.
+- **Housekeeping docs** (rattrapage du reliquat #11/#12) : `ROADMAP.md` (Phase 2
+  → ✅, Phase 3 → 🔄 avec le fait/à-venir, sujet priorisation ajouté), `CLAUDE.md`
+  (en-tête Phase 3, compte DEC 22→26, historique #11→#13), index `DECISIONS.md`
+  (DEC-025/026), README CLI (briefs #009/#010, convention Session CLI ID).
+- **À committer par Hassan (DEC-009)** — versionné : `decisions/DEC-025-*.md`,
+  `decisions/DEC-026-*.md`, `docs/PATTERN_CANDIDATES.md`, `DECISIONS.md`,
+  `ROADMAP.md`, `CLAUDE.md` (commit docs proposé « docs: Phase 3 — pattern
+  collection + secret-value redaction », companion de `fd810e0`). Non versionné
+  (gitignored, `.drafts/`) : instrument de collecte, 3 rapports CANDIDATES, brief
+  #010, README CLI.
+- **Sujet d'ouverture Desktop #14** : priorisation d'optimAI par le Cortex (voir
+  HANDOVER #14).

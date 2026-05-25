@@ -1,8 +1,8 @@
 # CLAUDE.md — optimAI Project Context
 
-> **Mode** : Phase 1 — Bootstrap + PoC, Claude Desktop intégré et validé bout-en-bout (étapes 8 + 9 ✅) ; prochain = intégration Claude CLI / `.mcp.json` projets (étape 10)
-> **Dernière mise à jour** : 2026-05-21 (Session Desktop #10 — CLI #6 validé,
-> serveur FastMCP stdio livré + intégré à Claude Desktop, ROADMAP étapes 8 + 9 ✅)
+> **Mode** : Phase 3 — Enrichissement collaboratif (en cours). Phases 1 & 2 complètes (Patterns A/D/B/C livrés + intégrés Desktop & CLI) ; Pattern E (Scan) livré CLI #10. Prochain = priorisation d'optimAI par le Cortex (Desktop #14)
+> **Dernière mise à jour** : 2026-05-25 (Session Desktop #13 — Phase 3 collecte
+> cross-projet, DEC-025/026, Pattern E livré CLI #10)
 
 ## Présentation
 
@@ -39,7 +39,7 @@ section "Évolution majeure 2026-05-19" de `DECISIONS.md`.
 
 | Priorité | Fichier | Contenu |
 |----------|---------|---------|
-| 🔴 | `DECISIONS.md` | Index des 22 décisions (DEC-001 → DEC-022, dont 6 superseded) |
+| 🔴 | `DECISIONS.md` | Index des 26 décisions (DEC-001 → DEC-026, dont 6 superseded) |
 | 🔴 | `ROADMAP.md` | Phases 1 → 4, statut courant |
 | 🟡 | `decisions/DEC-*` | Détails individuels par décision |
 | 🟡 | `docs/` | Architecture, patterns, troubleshooting (à venir Phase 1) |
@@ -370,6 +370,24 @@ security: Security improvement
 chore: Maintenance, bootstrap, deps
 ```
 
+### `docs:` — deux natures à distinguer
+
+Les commits `docs:` couvrent deux choses différentes qu'il vaut mieux ne pas
+mélanger dans un même commit :
+
+- **Contenu décisionnel neuf** — nouvelle DEC, nouveau doc d'architecture, etc.
+  Titre orienté sur le fond (ex. `docs: Phase 3 kickoff — pattern collection
+  methodology + secret-value redaction`).
+- **Synchronisation d'état** — remise en cohérence de `ROADMAP.md` / `CLAUDE.md`
+  / `DECISIONS.md` (statuts de phase, compte de décisions, historique de
+  sessions, notes de session) après une livraison. Utiliser le verbe **`sync`**,
+  déjà employé dans les notes de session (ex. `docs: sync ROADMAP/CLAUDE/DECISIONS
+  post-CLI #N`).
+
+Pourquoi : un commit `sync` ne porte aucune décision — le distinguer du contenu
+décisionnel rend l'historique lisible (on voit d'un coup d'œil ce qui a changé
+le *fond* du projet vs ce qui n'a fait que rattraper l'état des docs).
+
 ## Code Comment Standards
 
 Adaptés de TBS et Bassmati :
@@ -401,3 +419,7 @@ Adaptés de TBS et Bassmati :
 | Desktop #9 | 2026-05-21 | Mac Studio | Lecture REPORT CLI #5 + inspection `base.py`/`dispatcher.py`/`execute.py`, **DEC-021 + DEC-022 → ✅ Accepted** (contrat tenu sur 2ᵉ pattern par extension rétrocompatible), sync ROADMAP/CLAUDE/DECISIONS, HANDOVER Desktop #9 → #10 |
 | CLI #6 | 2026-05-21 | Mac Studio | Serveur FastMCP stdio (`server.py`) piloté par le registre (brief CLI_PROMPT_006, DEC-005/DEC-021) : 1 outil `optimai_<name>`/pattern via `Tool.from_function` (signature aplatie depuis `model_fields`), logging fichier + stderr(ERROR) jamais stdout, `PatternRejected`→`ToolError`, `tool_description` sur le Protocol ; 10 tests dont garde `test_server_tools_match_registry` + preuve dynamique `_GhostPattern` ; 134 tests, ruff clean, commit local `1a92b6e` |
 | Desktop #10 | 2026-05-21 | Mac Studio | Reprise étape 8 : plan design serveur MCP + brief CLI_PROMPT_006 ; au retour CLI #6, lecture REPORT + inspection `server.py`/`test_server.py`, **ROADMAP étape 8 → ✅** (DEC-021 confirmée sur 3ᵉ client du registre, hygiène stdout vérifiée) ; **intégration Claude Desktop (étape 9 → ✅)** : entrée `optimai` dans `claude_desktop_config.json` (runbook RUNBOOK_etape9), serveur **running**, test bout-en-bout réel `optimai_diagnose` → `DiagnoseReport` converged en 3 itérations ; sync ROADMAP/CLAUDE |
+| Desktop #11 | 2026-05-21 | Mac Studio | Intégration Claude CLI scope `user` (DEC-023, `~/.claude.json`) — runbook étape 10 ; **étapes 10 + 11 → ✅** (test bout-en-bout par projet TBS/Bassmati/QNAP × 3 Cortex, Pattern D live sur pack mutant) ; doc Phase 1 complète (`docs/ARCHITECTURE.md`, `docs/PATTERNS.md`, `TROUBLESHOOTING.md`) — **Phase 1 close** |
+| CLI #7 | 2026-05-23 | Mac Studio | Patterns B (Patch) & C (Create) + helper d'atomicité `snapshot.py` (brief CLI_PROMPT_007, DEC-024/021) : hooks `mutate`/`enrich_report` via `getattr`, 210 tests, 4 gardes architecturales, `optimai_patch`/`optimai_create` exposés sans toucher `server.py`, commit local `fb6d2b5` |
+| Desktop #12 | 2026-05-23/24 | Mac Studio | DEC-024 (périmètre réversibilité — atomicité intra-appel Phase 2, lot reporté) actée + amendée (statut d'échec 2 couches) + précisée (outil validation absent ≠ échec) ; smoke live B/C (bug B-rollback trouvé puis corrigé CLI #8 `9b7dffd`) ; briefs CLI #8 + #9 ; **Phase 2 close** |
+| Desktop #13 | 2026-05-25 | Mac Studio | **Phase 3 lancée** : méthodologie de collecte (DEC-025), instrument générique + 3 collectes projet (TBS/Bassmati/QNAP) → agrégation `docs/PATTERN_CANDIDATES.md` ; DEC-026 (non-divulgation valeurs de secrets en sortie) ; brief CLI_PROMPT_010 → **Pattern E (Scan/Audit) livré CLI #10** (commit `fd810e0`, 307 tests, 5ᵉ preuve DEC-021) ; convention Session CLI ID généralisée ; sync ROADMAP/CLAUDE/DECISIONS |
