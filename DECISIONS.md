@@ -40,6 +40,8 @@ Pour ajouter une nouvelle décision, voir `decisions/README.md`.
 | [DEC-022](decisions/DEC-022-per-command-timeout-policy.md) | Politique de timeout par-commande — par-pattern (Diagnose recover / Execute abort) | ✅ | 2026-05-20 |
 | [DEC-023](decisions/DEC-023-claude-cli-user-scope.md) | Intégration Claude CLI — scope `user` (`~/.claude.json`) | ✅ | 2026-05-21 |
 | [DEC-024](decisions/DEC-024-reversibility-scope.md) | Périmètre réversibilité — atomicité intra-appel (Phase 2), lot reporté | ✅ | 2026-05-23 |
+| [DEC-025](decisions/DEC-025-phase3-pattern-collection.md) | Méthodologie de collecte de patterns (Phase 3) | ✅ | 2026-05-25 |
+| [DEC-026](decisions/DEC-026-secret-value-redaction-in-reports.md) | Non-divulgation des valeurs de secrets en sortie (reports & logs) | ✅ | 2026-05-25 |
 
 ## Décisions à venir
 
