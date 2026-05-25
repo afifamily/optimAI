@@ -5,7 +5,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from optimai.schemas.report import CreateReport, DiagnoseReport, ExecuteReport, PatchReport
+from optimai.schemas.report import (
+    CreateReport,
+    DiagnoseReport,
+    ExecuteReport,
+    PatchReport,
+    ScanMatch,
+    ScanReport,
+)
 from optimai.schemas.task_spec import (
     CreateSpec,
     DiagnoseSpec,
@@ -13,6 +20,8 @@ from optimai.schemas.task_spec import (
     FileEdit,
     NewFile,
     PatchSpec,
+    ScanSpec,
+    ScanTarget,
 )
 
 
@@ -245,3 +254,140 @@ def test_patch_and_create_reports_accept_mutation_error_stop_reason():
     c = CreateReport(status="error", stop_reason="mutation_error")
     assert p.stop_reason == "mutation_error"
     assert c.stop_reason == "mutation_error"
+
+
+# --------------------------------------------------------------------------
+# Phase 3 — Pattern E (Scan/Audit) schemas (DEC-025, DEC-026)
+# --------------------------------------------------------------------------
+
+
+def test_scan_target_http_requires_url_scheme():
+    with pytest.raises(ValidationError):
+        ScanTarget(kind="http", ref="not-a-url")
+    ok = ScanTarget(kind="http", ref="http://example.com/robots.txt")
+    assert ok.ref.startswith("http://")
+
+
+def test_scan_target_fs_accepts_relative_path():
+    t = ScanTarget(kind="fs", ref="src/foo.go")
+    assert t.kind == "fs"
+    assert t.ref == "src/foo.go"
+
+
+def test_scan_target_rejects_blank_ref():
+    with pytest.raises(ValidationError):
+        ScanTarget(kind="fs", ref="   ")
+
+
+def test_scan_spec_requires_at_least_one_pattern_register(tmp_path):
+    """Validation: required ∪ forbidden ∪ secret_patterns must be non-empty."""
+    with pytest.raises(ValidationError):
+        ScanSpec(
+            goal="audit the robots.txt",
+            workdir=tmp_path,
+            targets=[ScanTarget(kind="fs", ref="robots.txt")],
+        )
+
+
+def test_scan_spec_accepts_secret_patterns_alone(tmp_path):
+    """A scan that only proves the absence of a secret is valid."""
+    spec = ScanSpec(
+        goal="prove ADMIN_PREFIX value never appears in served output",
+        workdir=tmp_path,
+        secret_patterns=["xyz-very-secret-value"],
+        targets=[ScanTarget(kind="http", ref="https://example.com/robots.txt")],
+    )
+    assert spec.secret_patterns == ["xyz-very-secret-value"]
+    assert spec.required == []
+    assert spec.forbidden == []
+
+
+def test_scan_spec_rejects_missing_workdir(tmp_path):
+    missing = tmp_path / "nope"
+    with pytest.raises(ValidationError):
+        ScanSpec(
+            goal="scan something",
+            workdir=missing,
+            required=["foo"],
+            targets=[ScanTarget(kind="fs", ref="x")],
+        )
+
+
+def test_scan_spec_rejects_short_goal(tmp_path):
+    with pytest.raises(ValidationError):
+        ScanSpec(
+            goal="hi",
+            workdir=tmp_path,
+            required=["foo"],
+            targets=[ScanTarget(kind="fs", ref="x")],
+        )
+
+
+def test_scan_spec_rejects_empty_targets(tmp_path):
+    with pytest.raises(ValidationError):
+        ScanSpec(
+            goal="scan something",
+            workdir=tmp_path,
+            required=["foo"],
+            targets=[],
+        )
+
+
+def test_scan_spec_rejects_bad_http_url(tmp_path):
+    with pytest.raises(ValidationError):
+        ScanSpec(
+            goal="scan something served",
+            workdir=tmp_path,
+            required=["og:title"],
+            targets=[ScanTarget(kind="http", ref="ftp://example.com/")],
+        )
+
+
+def test_scan_match_round_trip():
+    m = ScanMatch(target="robots.txt", line=2, text="Disallow: /admin", pattern="/admin")
+    restored = ScanMatch.model_validate_json(m.model_dump_json())
+    assert restored == m
+
+
+def test_scan_report_json_round_trip():
+    report = ScanReport(
+        status="complete",
+        verdict="pass",
+        matches=[],
+        missing_required=[],
+        patterns_checked=3,
+        iterations_used=2,
+        stop_reason="converged",
+        commands_executed=[{"cmd": "grep -rn ADMIN .", "exit": 1, "stdout_truncated": False}],
+        notes="no leak found",
+    )
+    restored = ScanReport.model_validate_json(report.model_dump_json())
+    assert restored == report
+
+
+def test_scan_report_fail_with_matches_and_missing():
+    report = ScanReport(
+        status="complete",
+        verdict="fail",
+        matches=[ScanMatch(target="index.html", line=42, text="<a href=/admin>", pattern="/admin")],
+        missing_required=["og:title"],
+        patterns_checked=2,
+        iterations_used=3,
+        stop_reason="converged",
+    )
+    assert report.verdict == "fail"
+    assert len(report.matches) == 1
+    assert report.missing_required == ["og:title"]
+
+
+def test_scan_report_incomplete_has_none_verdict():
+    """A non-converged scan reports no verdict."""
+    report = ScanReport(status="incomplete", stop_reason="max_iterations")
+    assert report.verdict is None
+    assert report.matches == []
+    assert report.missing_required == []
+
+
+def test_scan_report_rejects_bad_stop_reason():
+    with pytest.raises(ValidationError):
+        ScanReport(status="complete", verdict="pass", stop_reason="exploded")

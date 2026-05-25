@@ -156,6 +156,75 @@ class CreateReport(BaseModel):
     )
 
 
+class ScanMatch(BaseModel):
+    """One occurrence found during a Pattern E scan (DEC-025).
+
+    ``text`` and ``pattern`` are subject to DEC-026 redaction when ``pattern``
+    is declared as a secret in the spec; the dispatcher walks the whole report
+    generically before it leaves, so this model carries no redaction logic of
+    its own.
+    """
+
+    target: str = Field(description="The fs path or URL the match was found in.")
+    line: int | None = Field(
+        default=None,
+        description="Line number for fs targets (None for http, or when unknown).",
+    )
+    text: str = Field(description="Matched line / excerpt.")
+    pattern: str = Field(description="The input pattern that matched.")
+
+
+class ScanReport(BaseModel):
+    """Structured outcome of a Pattern E scan/audit (DEC-025, DEC-026).
+
+    Distinct report shape: ``matches`` + ``verdict`` is the Cortex-actionable
+    information (cf. PATTERN_CANDIDATES.md — what makes E a pattern in its own
+    right rather than an A/D usage). DEC-026 redaction acts on the existing
+    ``text``/``pattern`` / ``commands_executed[].cmd`` / ``notes`` fields; no
+    new field is needed for it.
+    """
+
+    status: Literal["complete", "incomplete", "error"] = Field(
+        description="complete = scan ran to convergence; incomplete = limit hit; "
+        "error = guardrail / shell / worker failure.",
+    )
+    verdict: Literal["pass", "fail"] | None = Field(
+        default=None,
+        description="pass = all required present AND no forbidden found. "
+        "None when status is not 'complete'.",
+    )
+    matches: list[ScanMatch] = Field(
+        default_factory=list,
+        description="Occurrences the worker reported (post-redaction for secret patterns).",
+    )
+    missing_required: list[str] = Field(
+        default_factory=list,
+        description="Required patterns that were not found in any target.",
+    )
+    patterns_checked: int = Field(
+        default=0,
+        ge=0,
+        description="Number of input patterns the worker confirms it scanned for.",
+    )
+    iterations_used: int = Field(
+        default=0,
+        ge=0,
+        description="Number of loop iterations consumed.",
+    )
+    stop_reason: StopReason = Field(
+        description="Why the orchestration loop stopped.",
+    )
+    commands_executed: list[dict] = Field(
+        default_factory=list,
+        description='Trace of every command: {"cmd", "exit", "stdout_truncated"}.',
+    )
+    notes: str = Field(
+        default="",
+        max_length=1024,
+        description="Free-form worker notes (<= 1 KB).",
+    )
+
+
 class ExecuteReport(BaseModel):
     """Structured outcome of a Pattern D bounded-pack execution (DEC-006).
 

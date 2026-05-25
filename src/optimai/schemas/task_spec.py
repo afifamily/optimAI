@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def _resolve_existing_workdir(value: Path) -> Path:
@@ -216,3 +216,102 @@ class CreateSpec(BaseModel):
     @classmethod
     def _workdir_must_exist(cls, value: Path) -> Path:
         return _resolve_existing_workdir(value)
+
+
+# --------------------------------------------------------------------------
+# Phase 3 — Pattern E (Scan/Audit) — DEC-025, DEC-026
+# --------------------------------------------------------------------------
+
+ScanTargetKind = Literal["fs", "http"]
+
+
+class ScanTarget(BaseModel):
+    """One target the worker must scan (DEC-025).
+
+    Two kinds: ``fs`` (a sub-path under the sandbox, grep'd locally) or
+    ``http`` (a URL whose GET response body is grep'd). HTTP is read-only —
+    a ``GET`` is bénin and explicitly allowed by DEC-008/DEC-025; the
+    blacklist still catches télécharge-puis-exécute shapes.
+    """
+
+    kind: ScanTargetKind = Field(description="Source family — fs or http.")
+    ref: str = Field(min_length=1, description="Filesystem ref or URL, depending on kind.")
+
+    @model_validator(mode="after")
+    def _ref_shape(self):
+        if not self.ref.strip():
+            raise ValueError("target ref must not be blank")
+        if self.kind == "http":
+            lower = self.ref.lower()
+            if not (lower.startswith("http://") or lower.startswith("https://")):
+                raise ValueError(
+                    f"http target ref must start with http:// or https://: {self.ref!r}"
+                )
+        return self
+
+
+class ScanSpec(BaseModel):
+    """Input contract for Pattern E — Cortex-supplied scan/audit (DEC-025, DEC-026).
+
+    Cortex-sourced: the patterns and targets come from the Cortex. The worker
+    runs ``grep``/``curl`` to collect occurrences, then formulates a pass/fail
+    verdict. Read-only by design (DEC-022 → ``recover`` timeout policy).
+
+    Secret invariant (DEC-026): ``secret_patterns`` declares values whose
+    *literal occurrences* must be stripped from every outgoing field — report
+    and log alike. The dispatcher consults this field via ``getattr`` as a
+    generic engine step; patterns A/D/B/C do not declare it and are unaffected.
+    """
+
+    goal: str = Field(
+        min_length=5,
+        description="Scan objective formulated by the Cortex.",
+    )
+    context: str = Field(
+        default="",
+        description="Free-form context — what 'pass' means, what a leak would look like.",
+    )
+    workdir: Path = Field(
+        description="Sandbox root for fs scans. Must exist.",
+    )
+    required: list[str] = Field(
+        default_factory=list,
+        description="Patterns that MUST be present in the targets. Missing → fail.",
+    )
+    forbidden: list[str] = Field(
+        default_factory=list,
+        description="Patterns that MUST be absent. Any occurrence → fail.",
+    )
+    secret_patterns: list[str] = Field(
+        default_factory=list,
+        description="Subset of patterns whose literal value is a secret. "
+        "Their values are redacted from every outgoing report field and from "
+        "logs (DEC-026). Pass the value verbatim — the dispatcher handles the "
+        "redaction generically.",
+    )
+    targets: list[ScanTarget] = Field(
+        min_length=1,
+        description="Sources to scan — at least one fs or http target.",
+    )
+    allowed_read_paths: list[Path] = Field(
+        default_factory=list,
+        description="Extra read-only paths beyond workdir. fs targets must live "
+        "inside workdir or one of these.",
+    )
+    extra_blacklist: list[str] = Field(
+        default_factory=list,
+        description="Task-specific blacklist regex patterns, added to the base list.",
+    )
+
+    @field_validator("workdir")
+    @classmethod
+    def _workdir_must_exist(cls, value: Path) -> Path:
+        return _resolve_existing_workdir(value)
+
+    @model_validator(mode="after")
+    def _at_least_one_pattern_register(self):
+        if not (self.required or self.forbidden or self.secret_patterns):
+            raise ValueError(
+                "at least one of required / forbidden / secret_patterns must be non-empty"
+            )
+        return self

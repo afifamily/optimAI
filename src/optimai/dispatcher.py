@@ -7,9 +7,15 @@ enforcement, and the worker correction protocol. Every task-specific concern
 resolved from the registry.
 
 This module must stay free of any pattern-specific import (Diagnose, Execute,
-Patch, Create, ...). The Phase-2 mutation phase (DEC-024) is wired by
+Patch, Create, Scan, ...). The Phase-2 mutation phase (DEC-024) is wired by
 consulting OPTIONAL hooks via ``getattr`` — never by importing a pattern —
 so the "axis 1 absorbed by the registry" claim of DEC-021 keeps holding.
+
+DEC-026 (Phase 3): a generic redaction step strips literal occurrences of every
+``spec.secret_patterns`` value from the outgoing report AND from log records,
+covering the three leak vectors (matches/text fields, ``commands_executed[].cmd``,
+free-form notes). The engine reads ``secret_patterns`` via ``getattr`` so patterns
+without that field (A/D/B/C today) are entirely unaffected.
 """
 
 import asyncio
@@ -36,6 +42,141 @@ logger = logging.getLogger(__name__)
 
 class PatternRejected(Exception):
     """Raised when the operator-supplied text matches a blacklist pattern."""
+
+
+# --------------------------------------------------------------------------
+# DEC-026 — secret-value redaction (generic engine step)
+# --------------------------------------------------------------------------
+
+
+def _collect_secret_values(spec: BaseModel) -> list[str]:
+    """Return the deduplicated, non-empty ``secret_patterns`` from ``spec``.
+
+    Reads via ``getattr`` so any pattern's spec that lacks the field (A/D/B/C
+    today) yields an empty list and turns the redaction step inert — the
+    Open/Closed extension principle of DEC-021.
+    """
+    raw = getattr(spec, "secret_patterns", []) or []
+    seen: list[str] = []
+    for value in raw:
+        if isinstance(value, str) and value and value not in seen:
+            seen.append(value)
+    return seen
+
+
+def _redact_string(value: str, placeholders: list[tuple[str, str]]) -> str:
+    """Replace every literal secret in ``value`` with its stable placeholder.
+
+    Order matters when one secret is a substring of another — we apply the
+    longer values first so partial replacements never strand a fragment of a
+    longer secret in the output.
+    """
+    out = value
+    for secret, placeholder in placeholders:
+        if secret in out:
+            out = out.replace(secret, placeholder)
+    return out
+
+
+def _redact_walk(node, placeholders: list[tuple[str, str]]):
+    """Walk ``node`` recursively, redacting every str leaf.
+
+    Built for the shape produced by ``BaseModel.model_dump()``: strings, ints,
+    None, lists, dicts. Non-string leaves are returned unchanged.
+    """
+    if isinstance(node, str):
+        return _redact_string(node, placeholders)
+    if isinstance(node, list):
+        return [_redact_walk(v, placeholders) for v in node]
+    if isinstance(node, dict):
+        return {k: _redact_walk(v, placeholders) for k, v in node.items()}
+    return node
+
+
+def _redact_report(report: BaseModel, secrets: list[str]) -> BaseModel:
+    """Strip every literal secret value from every string field of ``report``.
+
+    Single engine-generic pass — does not know the report's shape, so it covers
+    A/D/B/C/E uniformly and any future report's text fields without a code
+    change here. Returns a freshly validated instance so callers (and FastMCP
+    serialization downstream) see the redacted bytes.
+
+    Defensive assertion: after redaction, the serialized form must not contain
+    any literal secret (DEC-026 §4 — explicit failure beats silent leak).
+    """
+    if not secrets:
+        return report
+    placeholders = [
+        (s, f"<secret:{i + 1}>")
+        # Sort the (secret, placeholder) pairs so longer secrets are applied
+        # first while keeping the index assignment stable.
+        for i, s in enumerate(secrets)
+    ]
+    placeholders.sort(key=lambda pair: len(pair[0]), reverse=True)
+
+    redacted = _redact_walk(report.model_dump(), placeholders)
+    rebuilt = type(report).model_validate(redacted)
+
+    serialized = rebuilt.model_dump_json()
+    for secret in secrets:
+        if secret and secret in serialized:
+            raise AssertionError(
+                "DEC-026 redaction failed: a declared secret value survives in the report"
+            )
+    return rebuilt
+
+
+class _SecretLogFilter(logging.Filter):
+    """Logging filter that scrubs declared secret values from records in flight.
+
+    Attached to every handler on the ``optimai`` package logger for the
+    lifetime of a single ``dispatch()`` call. We mutate ``record.msg`` and
+    drop ``record.args`` after rendering the final message so propagation
+    cannot re-expose the value via lazy formatting.
+    """
+
+    def __init__(self, secrets: list[str]) -> None:
+        super().__init__()
+        sorted_secrets = sorted(secrets, key=len, reverse=True)
+        self._placeholders = [
+            (s, f"<secret:{secrets.index(s) + 1}>") for s in sorted_secrets
+        ]
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            rendered = record.getMessage()
+        except Exception:  # noqa: BLE001 — never let a logging quirk kill dispatch
+            return True
+        if not any(s in rendered for s, _ in self._placeholders):
+            return True
+        record.msg = _redact_string(rendered, self._placeholders)
+        record.args = ()
+        return True
+
+
+def _attach_log_redaction(secrets: list[str]) -> _SecretLogFilter | None:
+    """Install a log filter on every handler of the ``optimai`` package logger.
+
+    Handler-level (not logger-level) so records propagated up from child
+    loggers like ``optimai.shell`` / ``optimai.worker`` are scrubbed too —
+    the optimai package logger is where ``_configure_logging`` wires the
+    file + stderr handlers (server.py).
+    """
+    if not secrets:
+        return None
+    filter_obj = _SecretLogFilter(secrets)
+    pkg_logger = logging.getLogger("optimai")
+    for handler in pkg_logger.handlers:
+        handler.addFilter(filter_obj)
+    return filter_obj
+
+
+def _detach_log_redaction(filter_obj: _SecretLogFilter | None) -> None:
+    if filter_obj is None:
+        return
+    pkg_logger = logging.getLogger("optimai")
+    for handler in pkg_logger.handlers:
+        handler.removeFilter(filter_obj)
 
 
 def _per_command_timeout(global_timeout: int) -> int:
@@ -372,80 +513,95 @@ async def dispatch(
             f"Operator text matches blacklist pattern {matched!r}; refusing to dispatch."
         )
 
+    # DEC-026: declare secret values BEFORE the loop runs so log records emitted
+    # by shell / worker / dispatcher get scrubbed in flight on their way to the
+    # file handler. The redaction step on the report itself runs at the end,
+    # after enrich_report — see _redact_report.
+    secret_values = _collect_secret_values(spec)
+    log_filter = _attach_log_redaction(secret_values)
+
     commands_executed: list[dict] = []
     iterations_used: list[int] = [0]
 
-    # DEC-024 pre-loop mutation phase. Consulted via getattr so non-mutating
-    # patterns (A/D) keep the previous code path untouched — extension, not
-    # refactor (DEC-021).
-    snap: Snapshot | None = None
-    mut_result: MutationResult | None = None
-    mutate_hook = getattr(pattern, "mutate", None)
-    if mutate_hook is not None:
-        snap = Snapshot(spec.workdir, getattr(spec, "allowed_read_paths", []))
-        try:
-            mut_result = mutate_hook(spec, snap)
-        except Exception as exc:  # noqa: BLE001 — any failure means atomic restore
-            logger.warning("dispatch: mutate raised %s — restoring snapshot", exc)
-            snap.restore()
-            snap = None
-            report = pattern.build_report(
-                final_payload=None,
-                commands_executed=[],
-                stop_reason="mutation_error",
-                iterations_used=0,
-                status="error",
-                notes=f"mutation error: {exc}",
-            )
-            return _maybe_enrich(pattern, report, exc)
-
-    owns_client = client is None
-    if client is None:
-        client = httpx.AsyncClient(timeout=httpx.Timeout(60.0))
-
     try:
+        # DEC-024 pre-loop mutation phase. Consulted via getattr so non-mutating
+        # patterns (A/D) keep the previous code path untouched — extension, not
+        # refactor (DEC-021).
+        snap: Snapshot | None = None
+        mut_result: MutationResult | None = None
+        mutate_hook = getattr(pattern, "mutate", None)
+        if mutate_hook is not None:
+            snap = Snapshot(spec.workdir, getattr(spec, "allowed_read_paths", []))
+            try:
+                mut_result = mutate_hook(spec, snap)
+            except Exception as exc:  # noqa: BLE001 — any failure means atomic restore
+                logger.warning("dispatch: mutate raised %s — restoring snapshot", exc)
+                snap.restore()
+                snap = None
+                report = pattern.build_report(
+                    final_payload=None,
+                    commands_executed=[],
+                    stop_reason="mutation_error",
+                    iterations_used=0,
+                    status="error",
+                    notes=f"mutation error: {exc}",
+                )
+                enriched = _maybe_enrich(pattern, report, exc)
+                return _redact_report(enriched, secret_values)
+
+        owns_client = client is None
+        if client is None:
+            client = httpx.AsyncClient(timeout=httpx.Timeout(60.0))
+
         try:
-            report = await asyncio.wait_for(
-                _run_loop(
-                    pattern,
-                    spec,
-                    settings,
-                    client,
-                    blacklist_patterns,
-                    commands_executed,
-                    iterations_used,
-                    mut_result=mut_result,
-                ),
-                timeout=settings.timeout_seconds,
-            )
-        except asyncio.TimeoutError:
-            logger.warning(
-                "dispatch: global timeout after %ds (iter=%d)",
-                settings.timeout_seconds,
-                iterations_used[0],
-            )
-            report = pattern.build_report(
-                final_payload=None,
-                commands_executed=commands_executed,
-                stop_reason="timeout",
-                iterations_used=iterations_used[0],
-                status="incomplete",
-                notes=f"global timeout after {settings.timeout_seconds}s",
-            )
+            try:
+                report = await asyncio.wait_for(
+                    _run_loop(
+                        pattern,
+                        spec,
+                        settings,
+                        client,
+                        blacklist_patterns,
+                        commands_executed,
+                        iterations_used,
+                        mut_result=mut_result,
+                    ),
+                    timeout=settings.timeout_seconds,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "dispatch: global timeout after %ds (iter=%d)",
+                    settings.timeout_seconds,
+                    iterations_used[0],
+                )
+                report = pattern.build_report(
+                    final_payload=None,
+                    commands_executed=commands_executed,
+                    stop_reason="timeout",
+                    iterations_used=iterations_used[0],
+                    status="incomplete",
+                    notes=f"global timeout after {settings.timeout_seconds}s",
+                )
+        finally:
+            if owns_client:
+                await client.aclose()
+
+        # DEC-024 atomicity: any error after mutation means the loop did not
+        # validate the mutated state — revert files to their pre-call bytes.
+        if snap is not None:
+            if report.status == "error":
+                logger.info("dispatch: report.status=error — restoring snapshot")
+                snap.restore()
+            else:
+                snap.cleanup()
+
+        enriched = _maybe_enrich(pattern, report, mut_result)
+        # DEC-026: redact BEFORE returning. The log filter has already scrubbed
+        # whatever the loop emitted in flight; redacting the report is the
+        # second leg covering the Cortex-side return.
+        return _redact_report(enriched, secret_values)
     finally:
-        if owns_client:
-            await client.aclose()
-
-    # DEC-024 atomicity: any error after mutation means the loop did not
-    # validate the mutated state — revert files to their pre-call bytes.
-    if snap is not None:
-        if report.status == "error":
-            logger.info("dispatch: report.status=error — restoring snapshot")
-            snap.restore()
-        else:
-            snap.cleanup()
-
-    return _maybe_enrich(pattern, report, mut_result)
+        _detach_log_redaction(log_filter)
 
 
 def _maybe_enrich(pattern: Pattern, report: BaseModel, outcome) -> BaseModel:
